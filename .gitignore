@@ -1,2 +1,4 @@
 .env
 AntiHub-scripts-main/
+.claude/
+本地部署/
