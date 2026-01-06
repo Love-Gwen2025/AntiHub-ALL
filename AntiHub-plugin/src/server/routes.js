@@ -3,6 +3,7 @@ import oauthService from '../services/oauth.service.js';
 import accountService from '../services/account.service.js';
 import quotaService from '../services/quota.service.js';
 import userService from '../services/user.service.js';
+import projectService from '../services/project.service.js';
 import multiAccountClient from '../api/multi_account_client.js';
 import { generateRequestBody, dumpErrorArtifacts } from '../utils/utils.js';
 import logger from '../utils/logger.js';
@@ -10,6 +11,16 @@ import config from '../config/config.js';
 import { countStringTokens } from '../utils/token_counter.js';
 
 const router = express.Router();
+
+function normalizeSubscriptionTier(rawTier) {
+  if (!rawTier) return null;
+  const value = String(rawTier);
+  const upper = value.toUpperCase();
+  if (upper.includes('ULTRA')) return 'ULTRA';
+  if (upper.includes('PRO')) return 'PRO';
+  if (upper.includes('FREE')) return 'FREE';
+  return value;
+}
 
 /**
  * API Key认证中间件
@@ -394,6 +405,65 @@ router.post('/api/oauth/callback/manual', authenticateApiKey, async (req, res) =
 // ==================== 账号管理API ====================
 
 /**
+ * 通过 Refresh Token 导入账号（无需走 OAuth 授权流程）
+ * POST /api/accounts/import
+ * Body: { refresh_token, is_shared }
+ */
+router.post('/api/accounts/import', authenticateApiKey, async (req, res) => {
+  try {
+    const { refresh_token, is_shared = 0 } = req.body;
+
+    if (!refresh_token || typeof refresh_token !== 'string' || !refresh_token.trim()) {
+      return res.status(400).json({ error: '缺少refresh_token参数' });
+    }
+
+    if (is_shared !== 0 && is_shared !== 1) {
+      return res.status(400).json({ error: 'is_shared必须是0或1' });
+    }
+
+    const account = await oauthService.importAccountByRefreshToken({
+      user_id: req.user.user_id,
+      is_shared,
+      refresh_token
+    });
+
+    res.json({
+      success: true,
+      message: '账号导入成功',
+      data: {
+        cookie_id: account.cookie_id,
+        user_id: account.user_id,
+        is_shared: account.is_shared,
+        name: account.name,
+        email: account.email,
+        project_id_0: account.project_id_0,
+        is_restricted: account.is_restricted,
+        paid_tier: account.paid_tier,
+        ineligible: account.ineligible,
+        created_at: account.created_at
+      }
+    });
+  } catch (error) {
+    logger.error('导入账号失败:', error.message);
+
+    if (error?.isInvalidGrant) {
+      return res.status(400).json({ error: 'refresh_token无效或已失效，请重新授权后再导入' });
+    }
+
+    // 常见的可预期错误（如邮箱重复、账号不合格等）用 400 返回，方便前端提示
+    const message = typeof error?.message === 'string' ? error.message : '导入失败';
+    const isExpected =
+      message.includes('此邮箱已被添加过') ||
+      message.includes('此Refresh Token已被导入') ||
+      message.includes('没有资格使用Antigravity') ||
+      message.includes('未获取到refresh_token') ||
+      message.includes('缺少refresh_token参数');
+
+    return res.status(isExpected ? 400 : 500).json({ error: message });
+  }
+});
+
+/**
  * 获取当前用户的账号列表
  * GET /api/accounts
  */
@@ -482,6 +552,77 @@ router.get('/api/accounts/:cookie_id', authenticateApiKey, async (req, res) => {
  * 禁用共享账号时：减少用户共享配额池的 quota 和 max_quota
  * 启用共享账号时：增加用户共享配额池的 quota 和 max_quota
  */
+router.get('/api/accounts/:cookie_id/detail', authenticateApiKey, async (req, res) => {
+  try {
+    const { cookie_id } = req.params;
+    const account = await accountService.getAccountByCookieId(cookie_id);
+
+    if (!account) {
+      return res.status(404).json({ error: '账号不存在' });
+    }
+
+    if (!req.isAdmin && account.user_id !== req.user.user_id) {
+      return res.status(403).json({ error: '无权访问此账号' });
+    }
+
+    // 确保 access_token 可用（过期则刷新）
+    if (accountService.isTokenExpired(account)) {
+      logger.info(`账号token已过期，正在刷新: cookie_id=${cookie_id}`);
+      try {
+        const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
+        const expires_at = Date.now() + (tokenData.expires_in * 1000);
+        await accountService.updateAccountToken(cookie_id, tokenData.access_token, expires_at);
+        account.access_token = tokenData.access_token;
+        account.expires_at = expires_at;
+      } catch (refreshError) {
+        if (refreshError?.isInvalidGrant) {
+          logger.error(`账号刷新token失败(invalid_grant)，禁用账号: cookie_id=${cookie_id}`);
+          await accountService.updateAccountStatus(cookie_id, 0);
+        }
+        throw refreshError;
+      }
+    }
+
+    // 1) 邮箱：优先使用落库值；缺失则尝试实时获取（不强依赖）
+    let email = account.email ?? null;
+    if (!email) {
+      try {
+        const userInfo = await oauthService.getUserInfo(account.access_token);
+        email = userInfo?.email ?? null;
+      } catch (e) {
+        logger.warn(`获取账号邮箱失败: cookie_id=${cookie_id}, error=${e?.message || e}`);
+      }
+    }
+
+    // 2) 订阅层级：通过 loadCodeAssist 的 paidTier/currentTier 推断
+    let subscription_tier_raw = null;
+    let subscription_tier = null;
+    try {
+      const projectData = await projectService.loadCodeAssist(account.access_token);
+      subscription_tier_raw = projectData?.paidTier?.id || projectData?.currentTier?.id || null;
+      subscription_tier = normalizeSubscriptionTier(subscription_tier_raw);
+    } catch (e) {
+      logger.warn(`获取订阅层级失败: cookie_id=${cookie_id}, error=${e?.message || e}`);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        cookie_id: account.cookie_id,
+        name: account.name,
+        email,
+        created_at: account.created_at,
+        paid_tier: account.paid_tier ?? false,
+        subscription_tier,
+        subscription_tier_raw
+      }
+    });
+  } catch (error) {
+    logger.error('获取账号详情失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.put('/api/accounts/:cookie_id/status', authenticateApiKey, async (req, res) => {
   try {
     const { cookie_id } = req.params;

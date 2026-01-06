@@ -501,6 +501,23 @@ class PluginAPIService:
             method="GET",
             path="/api/accounts"
         )
+
+    async def import_account_by_refresh_token(
+        self,
+        user_id: int,
+        refresh_token: str,
+        is_shared: int = 0
+    ) -> Dict[str, Any]:
+        """通过 refresh_token 导入账号（无需走 OAuth 回调）"""
+        return await self.proxy_request(
+            user_id=user_id,
+            method="POST",
+            path="/api/accounts/import",
+            json_data={
+                "refresh_token": refresh_token,
+                "is_shared": is_shared
+            }
+        )
     
     async def get_account(self, user_id: int, cookie_id: str) -> Dict[str, Any]:
         """获取单个账号信息"""
@@ -508,6 +525,14 @@ class PluginAPIService:
             user_id=user_id,
             method="GET",
             path=f"/api/accounts/{cookie_id}"
+        )
+
+    async def get_account_detail(self, user_id: int, cookie_id: str) -> Dict[str, Any]:
+        """获取单个账号的详情信息（邮箱/订阅层级等）"""
+        return await self.proxy_request(
+            user_id=user_id,
+            method="GET",
+            path=f"/api/accounts/{cookie_id}/detail",
         )
     
     async def update_account_status(

@@ -667,6 +667,20 @@ export async function getAccounts(): Promise<Account[]> {
 }
 
 /**
+ * 通过 Refresh Token 导入账号
+ */
+export async function importAccountByRefreshToken(refreshToken: string, isShared: number = 0): Promise<Account> {
+  const result = await fetchWithAuth<{ success: boolean; data: Account }>(
+    `${API_BASE_URL}/api/plugin-api/accounts/import`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken, is_shared: isShared }),
+    }
+  );
+  return result.data;
+}
+
+/**
  * 获取账号详情
  */
 export async function getAccount(cookieId: string): Promise<Account> {
@@ -680,6 +694,24 @@ export async function getAccount(cookieId: string): Promise<Account> {
 /**
  * 删除账号
  */
+export interface AntigravityAccountDetail {
+  cookie_id: string;
+  name?: string | null;
+  email?: string | null;
+  created_at: string;
+  paid_tier?: boolean;
+  subscription_tier?: string | null;
+  subscription_tier_raw?: string | null;
+}
+
+export async function getAntigravityAccountDetail(cookieId: string): Promise<AntigravityAccountDetail> {
+  const result = await fetchWithAuth<{ success: boolean; data: AntigravityAccountDetail }>(
+    `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}/detail`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
 export async function deleteAccount(cookieId: string): Promise<any> {
   const result = await fetchWithAuth<{ success: boolean; data: any }>(
     `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}`,

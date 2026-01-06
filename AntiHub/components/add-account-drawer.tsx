@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { createKiroAccount, getOAuthAuthorizeUrl, submitOAuthCallback, getKiroOAuthAuthorizeUrl, getCurrentUser, pollKiroOAuthStatus } from '@/lib/api';
+import { createKiroAccount, getOAuthAuthorizeUrl, submitOAuthCallback, getKiroOAuthAuthorizeUrl, getCurrentUser, pollKiroOAuthStatus, importAccountByRefreshToken } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Button as StatefulButton } from '@/components/ui/stateful-button';
 import { Input } from '@/components/ui/input';
@@ -34,13 +34,14 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
   const [platform, setPlatform] = useState<'antigravity' | 'kiro' | ''>('');
   const [provider, setProvider] = useState<'Google' | 'Github' | ''>(''); // Kiro OAuth提供商
   const [accountType, setAccountType] = useState<0 | 1>(0); // 0=专属, 1=共享
-  const [loginMethod, setLoginMethod] = useState<'antihook' | 'manual' | ''>(''); // Antigravity 登录方式
+  const [loginMethod, setLoginMethod] = useState<'antihook' | 'manual' | 'refresh_token' | ''>(''); // Antigravity 登录方式
   const [kiroLoginMethod, setKiroLoginMethod] = useState<'oauth' | 'refresh_token' | ''>('');
   const [kiroImportAuthMethod, setKiroImportAuthMethod] = useState<'Social' | 'IdC'>('Social');
   const [kiroImportRefreshToken, setKiroImportRefreshToken] = useState('');
   const [kiroImportClientId, setKiroImportClientId] = useState('');
   const [kiroImportClientSecret, setKiroImportClientSecret] = useState('');
   const [kiroImportAccountName, setKiroImportAccountName] = useState('');
+  const [antigravityImportRefreshToken, setAntigravityImportRefreshToken] = useState('');
   const [oauthUrl, setOauthUrl] = useState('');
   const [oauthState, setOauthState] = useState(''); // Kiro OAuth state
   const [callbackUrl, setCallbackUrl] = useState('');
@@ -195,6 +196,14 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
         handleClose();
         return;
       }
+
+      // refresh_token 导入直接进入下一步
+      if (loginMethod === 'refresh_token') {
+        setOauthUrl('');
+        setCallbackUrl('');
+        setStep('authorize');
+        return;
+      }
       
       // 手动回调才需要获取授权链接并进入下一页
       try {
@@ -255,6 +264,7 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
       }
       setOauthUrl('');
       setCallbackUrl('');
+      setAntigravityImportRefreshToken('');
     }
   };
 
@@ -410,6 +420,42 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
     }
   };
 
+  const handleImportAntigravityAccount = async () => {
+    const refreshToken = antigravityImportRefreshToken.trim();
+    if (!refreshToken) {
+      toasterRef.current?.show({
+        title: '输入错误',
+        message: '请粘贴 refresh_token',
+        variant: 'warning',
+        position: 'top-right',
+      });
+      return;
+    }
+
+    try {
+      await importAccountByRefreshToken(refreshToken, accountType);
+      toasterRef.current?.show({
+        title: '导入成功',
+        message: '账号已成功添加',
+        variant: 'success',
+        position: 'top-right',
+      });
+
+      window.dispatchEvent(new CustomEvent('accountAdded'));
+      onOpenChange(false);
+      resetState();
+      onSuccess?.();
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '导入失败',
+        message: err instanceof Error ? err.message : '导入账号失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+      throw err;
+    }
+  };
+
   const handleImportKiroAccount = async () => {
     const refreshToken = kiroImportRefreshToken.trim();
     if (!refreshToken) {
@@ -490,6 +536,7 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
     setKiroImportClientId('');
     setKiroImportClientSecret('');
     setKiroImportAccountName('');
+    setAntigravityImportRefreshToken('');
     setOauthUrl('');
     setOauthState('');
     setCallbackUrl('');
@@ -919,6 +966,29 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
                     <h3 className="font-semibold">手动提交回调</h3>
                   </div>
                 </label>
+
+                {/* Refresh Token 导入 */}
+                <label
+                  className={cn(
+                    "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
+                    loginMethod === 'refresh_token' ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="loginMethod"
+                    value="refresh_token"
+                    checked={loginMethod === 'refresh_token'}
+                    onChange={() => setLoginMethod('refresh_token')}
+                    className="w-4 h-4 mt-1"
+                  />
+                  <div className="flex-1">
+                    <h3 className="font-semibold">Refresh Token 导入</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      直接粘贴 refresh_token 导入账号（适合已有 Token）
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
           )}
@@ -926,7 +996,29 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
           {/* 步骤 5: OAuth 授权 */}
           {step === 'authorize' && (
             <div className="space-y-6">
-              {platform === 'kiro' && kiroLoginMethod === 'refresh_token' ? (
+              {platform === 'antigravity' && loginMethod === 'refresh_token' ? (
+                <>
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">Refresh Token 导入</Label>
+                    <p className="text-sm text-muted-foreground">
+                      粘贴 refresh_token 后，服务端会校验并自动拉取账号信息与配额。
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label htmlFor="antigravity-refresh-token" className="text-base font-semibold">
+                      refresh_token
+                    </Label>
+                    <Textarea
+                      id="antigravity-refresh-token"
+                      placeholder="在此粘贴 refresh_token"
+                      value={antigravityImportRefreshToken}
+                      onChange={(e) => setAntigravityImportRefreshToken(e.target.value)}
+                      className="font-mono text-sm min-h-[140px]"
+                    />
+                  </div>
+                </>
+              ) : platform === 'kiro' && kiroLoginMethod === 'refresh_token' ? (
                 <>
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">Refresh Token 导入</Label>
@@ -1210,14 +1302,24 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
                 </Button>
               )
             ) : (
-              // Antigravity账号需要提交回调
-              <StatefulButton
-                onClick={handleSubmitCallback}
-                disabled={!callbackUrl.trim()}
-                className="flex-1 cursor-pointer"
-              >
-                完成添加
-              </StatefulButton>
+              loginMethod === 'refresh_token' ? (
+                <StatefulButton
+                  onClick={handleImportAntigravityAccount}
+                  disabled={!antigravityImportRefreshToken.trim()}
+                  className="flex-1 cursor-pointer"
+                >
+                  完成导入
+                </StatefulButton>
+              ) : (
+                // Antigravity账号需要提交回调
+                <StatefulButton
+                  onClick={handleSubmitCallback}
+                  disabled={!callbackUrl.trim()}
+                  className="flex-1 cursor-pointer"
+                >
+                  完成添加
+                </StatefulButton>
+              )
             )
           ) : step === 'method' ? (
             <Button

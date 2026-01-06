@@ -340,47 +340,79 @@ class OAuthService {
   }
 
   /**
-   * 处理OAuth回调
-   * @param {string} code - 授权码
-   * @param {string} state - State参数
+   * 通过 refresh_token 导入账号（无需走 OAuth 回调）
+   * @param {Object} params
+   * @param {string} params.user_id - 用户ID
+   * @param {number} params.is_shared - 是否共享 (0/1)
+   * @param {string} params.refresh_token - Google OAuth refresh_token
    * @returns {Promise<Object>} 创建的账号信息
    */
-  async handleCallback(code, state) {
-    // 验证state
-    const stateInfo = this.getStateInfo(state);
-    if (!stateInfo) {
-      throw new Error('Invalid or expired state parameter');
+  async importAccountByRefreshToken({ user_id, is_shared = 0, refresh_token }) {
+    if (!user_id) {
+      throw new Error('缺少user_id参数');
     }
 
-    const { user_id, is_shared } = stateInfo;
+    const normalizedRefreshToken = typeof refresh_token === 'string' ? refresh_token.trim() : '';
+    if (!normalizedRefreshToken) {
+      throw new Error('缺少refresh_token参数');
+    }
 
-    // 交换授权码获取token
-    const tokenData = await this.exchangeCodeForToken(code);
+    if (is_shared !== 0 && is_shared !== 1) {
+      throw new Error('is_shared必须是0或1');
+    }
 
+    // 先测试 refresh_token 是否可用，拿到 access_token
+    const tokenData = await this.refreshAccessToken(normalizedRefreshToken);
+
+    return this.createAccountFromTokens({
+      user_id,
+      is_shared,
+      access_token: tokenData.access_token,
+      refresh_token: normalizedRefreshToken,
+      expires_in: tokenData.expires_in
+    });
+  }
+
+  /**
+   * 统一的账号落库逻辑：从 access_token/refresh_token 创建账号 + 初始化配额
+   * @param {Object} params
+   * @param {string} params.user_id
+   * @param {number} params.is_shared
+   * @param {string} params.access_token
+   * @param {string} params.refresh_token
+   * @param {number} params.expires_in
+   * @returns {Promise<Object>} 创建的账号信息
+   */
+  async createAccountFromTokens({ user_id, is_shared, access_token, refresh_token, expires_in }) {
     // 生成cookie_id（使用refresh_token的hash作为唯一标识）
     const cookie_id = crypto
       .createHash('sha256')
-      .update(tokenData.refresh_token)
+      .update(refresh_token)
       .digest('hex')
       .substring(0, 32);
 
+    // 防止重复导入同一个 refresh_token
+    const existingByCookieId = await accountService.getAccountByCookieId(cookie_id);
+    if (existingByCookieId) {
+      throw new Error(`此Refresh Token已被导入: cookie_id=${cookie_id}`);
+    }
+
     // 计算过期时间
-    const expires_at = Date.now() + (tokenData.expires_in * 1000);
+    const expires_at = Date.now() + (expires_in * 1000);
 
     // 获取用户信息（email）
     let accountName = null;
     let accountEmail = null;
     try {
-      const userInfo = await this.getUserInfo(tokenData.access_token);
+      const userInfo = await this.getUserInfo(access_token);
       if (userInfo.email) {
         accountEmail = userInfo.email;
         accountName = userInfo.email;
         logger.info(`获取到账号email: ${accountEmail}`);
-        
+
         // 检查邮箱是否已存在
         const existingAccount = await accountService.getAccountByEmail(accountEmail);
         if (existingAccount) {
-          this.stateMap.delete(state);
           throw new Error(`此邮箱已被添加过: ${accountEmail}`);
         }
       }
@@ -398,64 +430,62 @@ class OAuthService {
     let ineligible = false;
     let paid_tier = false;
     let projectData = null;
-    
+
     try {
-      projectData = await projectService.loadCodeAssist(tokenData.access_token);
-      
+      projectData = await projectService.loadCodeAssist(access_token);
+
       // 首先判断是否为付费用户：paidTier.id 不包含 'free' 字符串则为付费用户
       // 如果没有paidTier，默认为false（免费用户）
       if (projectData.paidTier?.id) {
         paid_tier = !projectData.paidTier.id.toLowerCase().includes('free');
       }
-      
+
       // 检查是否为 INELIGIBLE_ACCOUNT（付费用户跳过此检查）
       if (!paid_tier && projectData.ineligibleTiers && projectData.ineligibleTiers.length > 0) {
         const hasIneligibleAccount = projectData.ineligibleTiers.some(
           tier => tier.reasonCode === 'INELIGIBLE_ACCOUNT'
         );
-        
+
         if (hasIneligibleAccount) {
           logger.error(`账号不符合使用条件 (INELIGIBLE_ACCOUNT): cookie_id=${cookie_id}`);
-          this.stateMap.delete(state);
           throw new Error('此账号没有资格使用Antigravity: INELIGIBLE_ACCOUNT');
         }
       }
-      
+
       // 检查是否为 UNSUPPORTED_LOCATION
       if (projectData.ineligibleTiers && projectData.ineligibleTiers.length > 0) {
         const hasUnsupportedLocation = projectData.ineligibleTiers.some(
           tier => tier.reasonCode === 'UNSUPPORTED_LOCATION'
         );
-        
+
         if (hasUnsupportedLocation) {
           is_restricted = true;
           logger.info(`账号受地区限制: cookie_id=${cookie_id}`);
         }
       }
-      
+
       // 如果是付费用户，记录日志
       if (paid_tier) {
         logger.info(`检测到付费用户，允许通过: cookie_id=${cookie_id}, tier=${projectData.paidTier?.id}`);
       }
-      
+
       // 获取project_id_0
       if (!is_restricted && projectData.cloudaicompanionProject) {
         project_id_0 = projectData.cloudaicompanionProject;
       }
-      
+
       // 检查是否允许登录：project_id_0为空 且 paid_tier为false 时阻止登录
       if (!project_id_0 && !paid_tier) {
         let reason = 'NO_PROJECT_AND_FREE_TIER';
         if (projectData.ineligibleTiers && projectData.ineligibleTiers.length > 0) {
           reason = projectData.ineligibleTiers[0].reasonCode || reason;
         }
-        
+
         ineligible = true;
         logger.error(`账号不符合使用条件 (project_id_0为空且为免费用户): cookie_id=${cookie_id}, reason=${reason}`);
-        this.stateMap.delete(state);
         throw new Error(`此账号没有资格使用Antigravity: ${reason}`);
       }
-      
+
     } catch (error) {
       // 如果是已知的账号资格错误，直接抛出
       if (error.message.includes('此账号没有资格使用Antigravity')) {
@@ -463,23 +493,22 @@ class OAuthService {
       }
       // 其他未知错误也阻止登录
       logger.error(`project_id获取失败: cookie_id=${cookie_id}, error=${error.message}`);
-      this.stateMap.delete(state);
       throw new Error('此账号没有资格使用Antigravity: UNKNOWN_ERROR');
     }
 
     let mergedModels = {};
-    
+
     // 使用project_id_0获取配额（即使为空也尝试，因为付费用户可能没有project_id但仍有配额）
     try {
       const projectIdToUse = project_id_0 || '';
       logger.info(`正在获取配额: project_id=${projectIdToUse || '(空)'}`);
-      
+
       const response0 = await fetch(config.api.modelsUrl, {
         method: 'POST',
         headers: {
           'Host': config.api.host,
           'User-Agent': config.api.userAgent,
-          'Authorization': `Bearer ${tokenData.access_token}`,
+          'Authorization': `Bearer ${access_token}`,
           'Content-Type': 'application/json',
           'Accept-Encoding': 'gzip'
         },
@@ -499,17 +528,16 @@ class OAuthService {
     } catch (error) {
       logger.warn(`配额获取异常: ${error.message}`);
     }
-    
+
     logger.info(`配额获取完成: cookie_id=${cookie_id}, 共${Object.keys(mergedModels).length}个模型`);
 
-    // paid_tier 已在前面计算，这里直接使用
-    // 第三步：创建账号
+    // 创建账号
     const account = await accountService.createAccount({
       cookie_id,
       user_id,
       is_shared,
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token,
+      access_token,
+      refresh_token,
       expires_at,
       project_id_0,
       is_restricted,
@@ -521,18 +549,16 @@ class OAuthService {
 
     // 更新model_quotas表
     await quotaService.updateQuotasFromModels(cookie_id, mergedModels);
-    
+
     const modelNames = Object.keys(mergedModels);
-    
+
     // 如果是共享cookie，增加用户共享配额池
     // quota += 账号配额 * 2，max_quota += 2
     if (is_shared === 1) {
       for (const modelName of modelNames) {
-        // 获取该模型的配额值
         const modelInfo = mergedModels[modelName];
         const accountQuota = modelInfo?.quotaInfo?.remainingFraction ?? 1.0;
-        
-        // 增加用户共享配额
+
         try {
           await quotaService.addUserSharedQuota(user_id, modelName, accountQuota);
         } catch (error) {
@@ -543,12 +569,47 @@ class OAuthService {
       logger.info(`非共享账号，跳过更新用户共享配额池: user_id=${user_id}, is_shared=${is_shared}`);
     }
 
-    // 清除state映射
-    this.stateMap.delete(state);
-
-    logger.info(`OAuth回调处理成功: cookie_id=${cookie_id}, user_id=${user_id}, ${modelNames.length}个可用模型`);
+    logger.info(`账号创建成功: cookie_id=${cookie_id}, user_id=${user_id}, ${modelNames.length}个可用模型`);
 
     return account;
+  }
+
+  /**
+   * 处理OAuth回调
+   * @param {string} code - 授权码
+   * @param {string} state - State参数
+   * @returns {Promise<Object>} 创建的账号信息
+   */
+  async handleCallback(code, state) {
+    // 验证state
+    const stateInfo = this.getStateInfo(state);
+    if (!stateInfo) {
+      throw new Error('Invalid or expired state parameter');
+    }
+
+    const { user_id, is_shared } = stateInfo;
+
+    try {
+      const tokenData = await this.exchangeCodeForToken(code);
+
+      const normalizedRefreshToken = typeof tokenData.refresh_token === 'string'
+        ? tokenData.refresh_token.trim()
+        : '';
+      if (!normalizedRefreshToken) {
+        throw new Error('未获取到refresh_token，请撤销授权后重新授权（需要 access_type=offline + prompt=consent）');
+      }
+
+      return await this.createAccountFromTokens({
+        user_id,
+        is_shared,
+        access_token: tokenData.access_token,
+        refresh_token: normalizedRefreshToken,
+        expires_in: tokenData.expires_in
+      });
+    } finally {
+      // 清除state映射
+      this.stateMap.delete(state);
+    }
   }
 }
 

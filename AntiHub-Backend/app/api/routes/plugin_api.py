@@ -18,6 +18,7 @@ from app.schemas.plugin_api import (
     CreatePluginUserResponse,
     OAuthAuthorizeRequest,
     OAuthCallbackRequest,
+    ImportAccountRequest,
     UpdateCookiePreferenceRequest,
     UpdateAccountStatusRequest,
     UpdateAccountNameRequest,
@@ -137,6 +138,50 @@ async def submit_oauth_callback(
 
 # ==================== 账号管理 ====================
 
+@router.post(
+    "/accounts/import",
+    summary="通过 Refresh Token 导入账号",
+    description="无需走 OAuth 回调，直接使用 refresh_token 导入账号并初始化配额信息"
+)
+async def import_account(
+    request: ImportAccountRequest,
+    current_user: User = Depends(get_current_user),
+    service: PluginAPIService = Depends(get_plugin_api_service)
+):
+    """通过 refresh_token 导入账号"""
+    try:
+        result = await service.import_account_by_refresh_token(
+            user_id=current_user.id,
+            refresh_token=request.refresh_token,
+            is_shared=request.is_shared
+        )
+        return result
+    except httpx.HTTPStatusError as e:
+        error_data = getattr(e, 'response_data', {"detail": str(e)})
+        if isinstance(error_data, dict):
+            if 'detail' in error_data:
+                detail = error_data['detail']
+            elif 'error' in error_data:
+                detail = error_data['error']
+            else:
+                detail = error_data
+        else:
+            detail = error_data
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=detail
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="导入账号失败"
+        )
+
 @router.get(
     "/accounts",
     summary="获取账号列表",
@@ -185,6 +230,32 @@ async def get_account(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取账号信息失败"
+        )
+
+
+@router.get(
+    "/accounts/{cookie_id}/detail",
+    summary="获取账号详情",
+    description="获取指定账号的邮箱、订阅层级、导入时间等信息"
+)
+async def get_account_detail(
+    cookie_id: str,
+    current_user: User = Depends(get_current_user),
+    service: PluginAPIService = Depends(get_plugin_api_service)
+):
+    """获取账号详情"""
+    try:
+        result = await service.get_account_detail(current_user.id, cookie_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取账号详情失败"
         )
 
 

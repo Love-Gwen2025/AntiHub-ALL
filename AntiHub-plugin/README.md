@@ -182,6 +182,15 @@ curl -X POST http://localhost:8045/api/oauth/authorize \
 2. 在浏览器中打开返回的 `auth_url` 进行授权
 3. 授权成功后会自动回调保存账号信息
 
+### 通过 Refresh Token 导入账号
+
+```bash
+curl -X POST http://localhost:8045/api/accounts/import \
+  -H "Authorization: Bearer sk-user-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"1//xxxx","is_shared":0}'
+```
+
 ### 查看账号列表
 
 ```bash

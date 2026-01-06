@@ -362,7 +362,49 @@ GET /api/oauth/callback?code=xxx&state=xxx
 
 ## 账号管理
 
-### 1. 获取当前用户的账号列表
+### 1. 通过 Refresh Token 导入账号
+
+**请求**
+
+```http
+POST /api/accounts/import
+Authorization: Bearer {用户API Key}
+Content-Type: application/json
+
+{
+  "refresh_token": "1//xxxx",
+  "is_shared": 0
+}
+```
+
+**参数说明**
+
+- `refresh_token` (必需): Google OAuth Refresh Token
+- `is_shared` (可选): 是否共享账号，0=专属，1=共享，默认0
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "账号导入成功",
+  "data": {
+    "cookie_id": "abc123...",
+    "user_id": "user-123",
+    "is_shared": 0,
+    "email": "xxx@gmail.com",
+    "project_id_0": "bamboo-precept-lgxtn",
+    "is_restricted": false,
+    "paid_tier": false,
+    "ineligible": false,
+    "created_at": "2025-11-21T14:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 2. 获取当前用户的账号列表
 
 **请求**
 
@@ -392,7 +434,7 @@ Authorization: Bearer {用户API Key}
 
 ---
 
-### 2. 获取单个账号信息
+### 3. 获取单个账号信息
 
 **请求**
 
@@ -420,7 +462,7 @@ Authorization: Bearer {用户API Key}
 
 ---
 
-### 3. 更新账号状态
+### 4. 更新账号状态
 
 **请求**
 
@@ -453,7 +495,7 @@ Content-Type: application/json
 
 ---
 
-### 4. 删除账号
+### 5. 删除账号
 
 **请求**
 

@@ -8,6 +8,7 @@ import {
   updateAccountName,
   updateAccountType,
   getAccountQuotas,
+  getAntigravityAccountDetail,
   updateQuotaStatus,
   getKiroAccounts,
   deleteKiroAccount,
@@ -16,6 +17,7 @@ import {
   getKiroAccountBalance,
   getCurrentUser,
   type Account,
+  type AntigravityAccountDetail,
   type KiroAccount
 } from '@/lib/api';
 import { AddAccountDrawer } from '@/components/add-account-drawer';
@@ -91,6 +93,11 @@ export default function AccountsPage() {
   const [renamingAntigravityAccount, setRenamingAntigravityAccount] = useState<Account | null>(null);
   const [newAntigravityAccountName, setNewAntigravityAccountName] = useState('');
   const [isRenamingAntigravity, setIsRenamingAntigravity] = useState(false);
+
+  // Antigravity 账号详情 Dialog 状态
+  const [isAntigravityDetailDialogOpen, setIsAntigravityDetailDialogOpen] = useState(false);
+  const [antigravityDetail, setAntigravityDetail] = useState<AntigravityAccountDetail | null>(null);
+  const [isLoadingAntigravityDetail, setIsLoadingAntigravityDetail] = useState(false);
 
   // Kiro 账号详情 Dialog 状态
   const [isKiroDetailDialogOpen, setIsKiroDetailDialogOpen] = useState(false);
@@ -472,6 +479,26 @@ export default function AccountsPage() {
     }
   };
 
+  const handleViewAntigravityDetail = async (account: Account) => {
+    setIsAntigravityDetailDialogOpen(true);
+    setIsLoadingAntigravityDetail(true);
+    setAntigravityDetail(null);
+
+    try {
+      const detail = await getAntigravityAccountDetail(account.cookie_id);
+      setAntigravityDetail(detail);
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '加载失败',
+        message: err instanceof Error ? err.message : '加载账号详情失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    } finally {
+      setIsLoadingAntigravityDetail(false);
+    }
+  };
+
   const handleViewQuotas = async (account: Account) => {
     setCurrentAccount(account);
     setIsQuotaDialogOpen(true);
@@ -757,7 +784,11 @@ export default function AccountsPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleViewQuotas(account)}>
+                                   <DropdownMenuItem onClick={() => handleViewAntigravityDetail(account)}>
+                                     <IconExternalLink className="size-4 mr-2" />
+                                     详细信息
+                                   </DropdownMenuItem>
+                                   <DropdownMenuItem onClick={() => handleViewQuotas(account)}>
                                     <IconChartBar className="size-4 mr-2" />
                                     查看配额
                                   </DropdownMenuItem>
@@ -1101,6 +1132,67 @@ export default function AccountsPage() {
       </Dialog>
 
       {/* Kiro 账号详情 Dialog */}
+      {/* Antigravity 账号详情 Dialog */}
+      <Dialog open={isAntigravityDetailDialogOpen} onOpenChange={setIsAntigravityDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>账号详细信息</DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingAntigravityDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <MorphingSquare message="加载账号信息..." />
+              </div>
+            ) : antigravityDetail ? (
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground">基本信息</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">账号ID</Label>
+                      <p className="text-sm font-mono">{antigravityDetail.cookie_id}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">邮箱</Label>
+                      <p className="text-sm">{antigravityDetail.email || '未提供邮箱'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">账号名称</Label>
+                      <p className="text-sm">{antigravityDetail.name || '未命名'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">订阅层</Label>
+                      <Badge variant="secondary">
+                        {antigravityDetail.subscription_tier ||
+                          antigravityDetail.subscription_tier_raw ||
+                          (antigravityDetail.paid_tier ? 'PAID' : 'FREE')}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs text-muted-foreground">导入时间</Label>
+                      <p className="text-sm">
+                        {new Date(antigravityDetail.created_at).toLocaleString('zh-CN')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">暂无账号详情</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAntigravityDetailDialogOpen(false)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isKiroDetailDialogOpen} onOpenChange={setIsKiroDetailDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>

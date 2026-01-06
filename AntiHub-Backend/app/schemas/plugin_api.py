@@ -63,6 +63,12 @@ class OAuthCallbackRequest(BaseModel):
     callback_url: str = Field(..., description="完整的回调URL")
 
 
+class ImportAccountRequest(BaseModel):
+    """通过 Refresh Token 导入账号"""
+    refresh_token: str = Field(..., description="Google OAuth Refresh Token")
+    is_shared: int = Field(0, description="0=专属cookie，1=共享cookie")
+
+
 class UpdateCookiePreferenceRequest(BaseModel):
     """更新Cookie优先级"""
     prefer_shared: int = Field(..., description="0=专属优先，1=共享优先")
