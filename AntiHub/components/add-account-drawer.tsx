@@ -24,7 +24,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import { IconExternalLink, IconCopy, IconX } from '@tabler/icons-react';
+import { IconExternalLink, IconCopy, IconX, IconDownload } from '@tabler/icons-react';
 import { Qwen } from '@lobehub/icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -736,6 +736,74 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
     }
   };
 
+  /**
+   * 自动检测用户平台并下载对应的 AntiHook 二进制文件
+   * 支持：Windows、macOS (Intel/ARM)、Linux
+   * 如果无法检测则弹出提示让用户手动选择
+   */
+  const handleDownloadAntiHook = () => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const platform = navigator.platform?.toLowerCase() || '';
+
+    let downloadPath = '';
+    let platformName = '';
+
+    // 检测操作系统
+    if (userAgent.includes('win') || platform.includes('win')) {
+      downloadPath = '/downloads/antihook-windows-amd64.exe';
+      platformName = 'Windows';
+    } else if (userAgent.includes('mac') || platform.includes('mac')) {
+      // macOS 需要区分 Intel 和 Apple Silicon
+      // 注意：navigator.platform 在 Apple Silicon 上仍可能返回 "MacIntel"
+      // 可以通过其他方式检测，但最可靠的是让用户选择
+      // 这里默认检测：如果是 ARM64 架构就下载 arm64 版本
+      const isAppleSilicon =
+        // @ts-ignore - navigator.userAgentData 是新 API
+        navigator.userAgentData?.platform === 'macOS' &&
+        // @ts-ignore
+        navigator.userAgentData?.architecture === 'arm';
+
+      if (isAppleSilicon) {
+        downloadPath = '/downloads/antihook-darwin-arm64';
+        platformName = 'macOS (Apple Silicon)';
+      } else {
+        // 无法准确检测，默认下载 Intel 版本，或者可以弹窗让用户选择
+        // 这里我们默认下载 arm64，因为现在大多数新 Mac 都是 Apple Silicon
+        downloadPath = '/downloads/antihook-darwin-arm64';
+        platformName = 'macOS';
+      }
+    } else if (userAgent.includes('linux') || platform.includes('linux')) {
+      downloadPath = '/downloads/antihook-linux-amd64';
+      platformName = 'Linux';
+    }
+
+    if (downloadPath) {
+      // 创建隐藏的下载链接并触发下载
+      const link = document.createElement('a');
+      link.href = downloadPath;
+      link.download = downloadPath.split('/').pop() || 'antihook';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toasterRef.current?.show({
+        title: '开始下载',
+        message: `正在下载 AntiHook (${platformName})`,
+        variant: 'success',
+        position: 'top-right',
+      });
+    } else {
+      // 无法检测平台，提示用户
+      toasterRef.current?.show({
+        title: '无法检测系统',
+        message: '请访问 GitHub Releases 手动下载对应版本',
+        variant: 'warning',
+        position: 'top-right',
+      });
+      window.open('https://github.com/AntiHub-Project/AntiHook/releases', '_blank');
+    }
+  };
+
   const handleClose = () => {
     // 立即清理定时器
     if (timerRef.current) {
@@ -961,14 +1029,14 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
                   <strong>重要指示</strong>
                   <br />
                   要登录 Kiro ，请先下载并运行至少一次{' '}
-                  <a
-                    href="https://github.com/AntiHub-Project/AntiHook/releases"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-yellow-700 dark:hover:text-yellow-300"
+                  <button
+                    type="button"
+                    onClick={handleDownloadAntiHook}
+                    className="underline hover:text-yellow-700 dark:hover:text-yellow-300 inline-flex items-center gap-1"
                   >
+                    <IconDownload className="size-3" />
                     AntiHook
-                  </a>
+                  </button>
                   。
                 </p>
               </div>
@@ -1059,14 +1127,14 @@ export function AddAccountDrawer({ open, onOpenChange, onSuccess }: AddAccountDr
                     {loginMethod === 'antihook' && (
                       <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
                         请确保已安装并运行{' '}
-                        <a
-                          href="https://github.com/AntiHub-Project/AntiHook/releases"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:text-yellow-700 dark:hover:text-yellow-300"
+                        <button
+                          type="button"
+                          onClick={handleDownloadAntiHook}
+                          className="underline hover:text-yellow-700 dark:hover:text-yellow-300 inline-flex items-center gap-1"
                         >
+                          <IconDownload className="size-3" />
                           AntiHook
-                        </a>
+                        </button>
                         {' '}客户端
                       </p>
                     )}
