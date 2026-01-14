@@ -3,7 +3,7 @@
 # AntiHub Plugin - Docker Entry Point
 # ============================================
 # 从环境变量生成 config.json
-# 支持挂载自定义配置文件
+# 每次启动覆盖生成 config.json（避免旧配置残留）
 # 自动检测并初始化数据库
 # ============================================
 
@@ -52,14 +52,10 @@ echo ""
 # 2. 生成 config.json
 # ============================================
 
-# 如果已存在自定义配置文件，跳过生成
-if [ -f "$CONFIG_FILE" ]; then
-    echo "使用已存在的配置文件: $CONFIG_FILE"
-else
-    echo "从环境变量生成配置文件..."
+# 每次启动都从环境变量重新生成（覆盖）config.json，避免旧版本残留导致行为不一致
+echo "从环境变量生成配置文件（覆盖）: $CONFIG_FILE"
 
-    # 生成 config.json
-    cat > "$CONFIG_FILE" << EOF
+if ! (cat > "$CONFIG_FILE" << EOF
 {
   "server": {
     "port": "${PORT:-8045}",
@@ -98,10 +94,13 @@ else
   "systemInstruction": ""
 }
 EOF
-
-    echo "配置文件已生成: $CONFIG_FILE"
-    cat "$CONFIG_FILE"
+); then
+    echo "ERROR: 无法写入 $CONFIG_FILE（可能被挂载为只读或权限不足），请移除挂载或调整权限"
+    exit 1
 fi
+
+echo "配置文件已生成: $CONFIG_FILE"
+cat "$CONFIG_FILE"
 
 echo ""
 echo "启动 AntiHub API 服务..."

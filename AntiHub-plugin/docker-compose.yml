@@ -48,9 +48,7 @@ services:
       - PORT=8045
       - NODE_ENV=production
 
-    # 可选：挂载自定义配置
-    # volumes:
-    #   - ./config.json:/app/config.json:ro
+    # 注意：不支持挂载 config.json（容器启动会覆盖生成 /app/config.json）；请用环境变量配置
 
     # 健康检查
     healthcheck:

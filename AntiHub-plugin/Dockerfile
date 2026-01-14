@@ -49,7 +49,8 @@ ENV CONFIG_TEMPLATE='{"server":{"port":8045,"host":"0.0.0.0"},"database":{"host"
 
 # 复制入口脚本并添加执行权限
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# 防止 Windows 下 CRLF 换行导致 /bin/sh^M 错误
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # 修改文件所有者
 RUN chown -R appuser:appgroup /app

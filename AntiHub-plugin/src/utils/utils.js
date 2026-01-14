@@ -586,55 +586,48 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
   // 参考 CLIProxyAPI 的修复：为 claude 和 gemini-3-pro 模型使用简化的 systemInstruction
   const isClaudeOrGemini3Pro = baseModelName.includes('claude') || baseModelName.includes('gemini-3-pro');
 
-  let systemInstructionText;
-  let systemInstructionPartsExtra = [];
+  const defaultSystemInstructionShort = config.systemInstructionShort || 'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**';
+  const systemMessages = openaiMessages.filter(msg => msg.role === 'system');
 
-  if (isClaudeOrGemini3Pro) {
-    // 使用简短的 systemInstruction（参考 CLIProxyAPI commit 1b2f907）
-    systemInstructionText = config.systemInstructionShort || 'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**';
-
-    // 保留用户传入的 system 消息的 parts
-    const systemMessages = openaiMessages.filter(msg => msg.role === 'system');
-    if (systemMessages.length > 0) {
-      for (const msg of systemMessages) {
-        if (Array.isArray(msg.content)) {
-          // 提取所有 text 类型的 part
-          const textParts = msg.content.filter(item => item.type === 'text').map(item => ({ text: item.text }));
-          systemInstructionPartsExtra.push(...textParts);
-        } else if (typeof msg.content === 'string') {
-          systemInstructionPartsExtra.push({ text: msg.content });
-        }
+  const userSystemText = systemMessages
+    .map(msg => {
+      if (typeof msg.content === 'string') {
+        return msg.content;
       }
-    }
-  } else {
-    // 其他模型使用完整默认配置
-    const systemMessages = openaiMessages.filter(msg => msg.role === 'system');
-    systemInstructionText = config.systemInstruction || '';
+      if (Array.isArray(msg.content)) {
+        return msg.content
+          .filter(item => item.type === 'text')
+          .map(item => item.text)
+          .join('');
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
 
-    if (systemMessages.length > 0) {
-      const userSystemText = systemMessages.map(msg => {
-        if (typeof msg.content === 'string') {
-          return msg.content;
-        } else if (Array.isArray(msg.content)) {
-          return msg.content
-            .filter(item => item.type === 'text')
-            .map(item => item.text)
-            .join('');
-        }
-        return '';
-      }).join('\n\n');
+  const configuredSystemInstruction = typeof config.systemInstruction === 'string'
+    ? config.systemInstruction.trim()
+    : '';
 
-      systemInstructionText = systemInstructionText ? `${systemInstructionText}\n\n${userSystemText}` : userSystemText;
-    }
+  // 任何模型：确保开头包含 Antigravity 的 system prompt（用户 system 会拼在后面）
+  // Claude / gemini-3-pro：保持简短版本，避免长 systemInstruction 带来兼容性/长度问题
+  let systemInstructionText = defaultSystemInstructionShort;
+
+  if (!isClaudeOrGemini3Pro && configuredSystemInstruction) {
+    const normalizedPrefix = defaultSystemInstructionShort.trim();
+    const normalizedConfigured = configuredSystemInstruction.trimStart();
+    systemInstructionText = normalizedConfigured.startsWith(normalizedPrefix)
+      ? normalizedConfigured
+      : `${defaultSystemInstructionShort}\n\n${configuredSystemInstruction}`;
+  }
+
+  if (userSystemText) {
+    systemInstructionText = `${systemInstructionText}\n\n${userSystemText}`;
   }
 
   // 构建 systemInstruction.parts
   const systemInstructionParts = [{ text: systemInstructionText }];
-
-  // 如果有额外的 system instruction parts（来自用户传入的 system 消息），追加到数组末尾
-  if (systemInstructionPartsExtra && systemInstructionPartsExtra.length > 0) {
-    systemInstructionParts.push(...systemInstructionPartsExtra);
-  }
 
   const requestBody = {
     project: projectId,
