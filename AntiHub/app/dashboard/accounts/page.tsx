@@ -6,6 +6,7 @@ import {
   deleteAccount,
   updateAccountStatus,
   updateAccountName,
+  refreshAccount,
   getAccountQuotas,
   getAntigravityAccountDetail,
   updateQuotaStatus,
@@ -40,6 +41,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from '@/components/ui/responsive-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -73,6 +82,7 @@ export default function AccountsPage() {
   const [qwenAccounts, setQwenAccounts] = useState<QwenAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshingCookieId, setRefreshingCookieId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'antigravity' | 'kiro' | 'qwen'>('antigravity');
 
   // 添加账号 Drawer 状态
@@ -233,6 +243,33 @@ export default function AccountsPage() {
         variant: 'error',
         position: 'top-right',
       });
+    }
+  };
+
+  const handleRefreshAntigravityAccount = async (account: Account) => {
+    setRefreshingCookieId(account.cookie_id);
+    try {
+      const updated = await refreshAccount(account.cookie_id);
+      setAccounts(accounts.map(a =>
+        a.cookie_id === account.cookie_id
+          ? { ...a, ...updated }
+          : a
+      ));
+      toasterRef.current?.show({
+        title: '刷新成功',
+        message: '已更新项目ID与Token',
+        variant: 'success',
+        position: 'top-right',
+      });
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '刷新失败',
+        message: err instanceof Error ? err.message : '刷新账号失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    } finally {
+      setRefreshingCookieId(null);
     }
   };
 
@@ -706,69 +743,72 @@ export default function AccountsPage() {
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
         {/* 页面标题和操作 */}
-        <div className="flex items-center justify-between mb-6">
-          <div></div>
-          <div className="flex gap-2">
-            {/* 账号配置切换下拉菜单 */}
-            <Select value={activeTab} onValueChange={(value: 'antigravity' | 'kiro' | 'qwen') => setActiveTab(value)}>
-              <SelectTrigger className="w-[160px] h-9">
-                <SelectValue>
-                  {activeTab === 'antigravity' ? (
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div></div>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 账号配置切换下拉菜单 */}
+              <Select value={activeTab} onValueChange={(value: 'antigravity' | 'kiro' | 'qwen') => setActiveTab(value)}>
+                <SelectTrigger className="w-[140px] sm:w-[160px] h-9">
+                  <SelectValue>
+                    {activeTab === 'antigravity' ? (
+                      <span className="flex items-center gap-2">
+                        <img src="/antigravity-logo.png" alt="" className="size-4 rounded" />
+                        <span className="hidden sm:inline">Antigravity</span>
+                        <span className="sm:hidden">Anti</span>
+                      </span>
+                    ) : activeTab === 'kiro' ? (
+                      <span className="flex items-center gap-2">
+                        <img src="/kiro.png" alt="" className="size-4 rounded" />
+                        Kiro
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Qwen className="size-4" />
+                        Qwen
+                      </span>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="antigravity">
                     <span className="flex items-center gap-2">
                       <img src="/antigravity-logo.png" alt="" className="size-4 rounded" />
                       Antigravity
                     </span>
-                  ) : activeTab === 'kiro' ? (
+                  </SelectItem>
+                  <SelectItem value="kiro">
                     <span className="flex items-center gap-2">
                       <img src="/kiro.png" alt="" className="size-4 rounded" />
                       Kiro
                     </span>
-                  ) : (
+                  </SelectItem>
+                  <SelectItem value="qwen">
                     <span className="flex items-center gap-2">
                       <Qwen className="size-4" />
                       Qwen
                     </span>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="antigravity">
-                  <span className="flex items-center gap-2">
-                    <img src="/antigravity-logo.png" alt="" className="size-4 rounded" />
-                    Antigravity
-                  </span>
-                </SelectItem>
-                <SelectItem value="kiro">
-                  <span className="flex items-center gap-2">
-                    <img src="/kiro.png" alt="" className="size-4 rounded" />
-                    Kiro
-                  </span>
-                </SelectItem>
-                <SelectItem value="qwen">
-                  <span className="flex items-center gap-2">
-                    <Qwen className="size-4" />
-                    Qwen
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="default"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? (
-                <MorphingSquare className="size-4" />
-              ) : (
-                <IconRefresh className="size-4" />
-              )}
-              <span className="ml-2">刷新</span>
-            </Button>
-            <Button size="default" onClick={handleAddAccount}>
-              <IconCirclePlusFilled className="size-4" />
-              <span className="ml-2">添加账号</span>
-            </Button>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <MorphingSquare className="size-4" />
+                ) : (
+                  <IconRefresh className="size-4" />
+                )}
+                <span className="ml-2 hidden sm:inline">刷新</span>
+              </Button>
+              <Button size="default" onClick={handleAddAccount}>
+                <IconCirclePlusFilled className="size-4" />
+                <span className="ml-2">添加账号</span>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -795,6 +835,7 @@ export default function AccountsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="min-w-[200px]">账号 ID</TableHead>
+                          <TableHead className="min-w-[220px]">Project ID</TableHead>
                           <TableHead className="min-w-[120px]">账号名称</TableHead>
                           <TableHead className="min-w-[80px]">状态</TableHead>
                           <TableHead className="min-w-[100px]">添加时间</TableHead>
@@ -808,6 +849,11 @@ export default function AccountsPage() {
                             <TableCell className="font-mono text-sm">
                               <div className="max-w-[200px] truncate" title={account.cookie_id}>
                                 {account.cookie_id}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              <div className="max-w-[220px] truncate" title={account.project_id_0 || ''}>
+                                {account.project_id_0 || '-'}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -865,6 +911,13 @@ export default function AccountsPage() {
                                    <DropdownMenuItem onClick={() => handleViewQuotas(account)}>
                                     <IconChartBar className="size-4 mr-2" />
                                     查看配额
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleRefreshAntigravityAccount(account)}
+                                    disabled={refreshingCookieId === account.cookie_id}
+                                  >
+                                    <IconRefresh className="size-4 mr-2" />
+                                    {refreshingCookieId === account.cookie_id ? '刷新中...' : '刷新项目ID'}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleRenameAntigravity(account)}>
                                     <IconEdit className="size-4 mr-2" />
@@ -1347,15 +1400,14 @@ export default function AccountsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Kiro 账号详情 Dialog */}
-      {/* Antigravity 账号详情 Dialog */}
-      <Dialog open={isAntigravityDetailDialogOpen} onOpenChange={setIsAntigravityDetailDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>账号详细信息</DialogTitle>
-          </DialogHeader>
+      {/* Antigravity 账号详情 - 响应式弹窗 */}
+      <ResponsiveDialog open={isAntigravityDetailDialogOpen} onOpenChange={setIsAntigravityDetailDialogOpen} dismissible={false}>
+        <ResponsiveDialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col p-0" showHandle={false}>
+          <ResponsiveDialogHeader className="shrink-0 px-4 pt-4 pb-2 border-b">
+            <ResponsiveDialogTitle>账号详细信息</ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
 
-          <div className="py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4">
             {isLoadingAntigravityDetail ? (
               <div className="flex items-center justify-center py-12">
                 <MorphingSquare message="加载账号信息..." />
@@ -1367,11 +1419,17 @@ export default function AccountsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">账号ID</Label>
-                      <p className="text-sm font-mono">{antigravityDetail.cookie_id}</p>
+                      <p className="text-sm font-mono break-all">{antigravityDetail.cookie_id}</p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">邮箱</Label>
-                      <p className="text-sm">{antigravityDetail.email || '未提供邮箱'}</p>
+                      <p className="text-sm break-all">{antigravityDetail.email || '未提供邮箱'}</p>
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs text-muted-foreground">Project ID</Label>
+                      <p className="text-sm font-mono break-all">
+                        {accounts.find(a => a.cookie_id === antigravityDetail.cookie_id)?.project_id_0 || '未获取'}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">账号名称</Label>
@@ -1401,21 +1459,22 @@ export default function AccountsPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <ResponsiveDialogFooter className="shrink-0 px-4 pb-4 pt-2 border-t">
             <Button variant="outline" onClick={() => setIsAntigravityDetailDialogOpen(false)}>
               关闭
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
-      <Dialog open={isKiroDetailDialogOpen} onOpenChange={setIsKiroDetailDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>账号详细信息</DialogTitle>
-          </DialogHeader>
+      {/* Kiro 账号详情 - 响应式弹窗 */}
+      <ResponsiveDialog open={isKiroDetailDialogOpen} onOpenChange={setIsKiroDetailDialogOpen} dismissible={false}>
+        <ResponsiveDialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col p-0" showHandle={false}>
+          <ResponsiveDialogHeader className="shrink-0 px-4 pt-4 pb-2 border-b">
+            <ResponsiveDialogTitle>账号详细信息</ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
 
-          <div className="py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4">
             {isLoadingDetail ? (
               <div className="flex items-center justify-center py-12">
                 <MorphingSquare message="加载余额信息..." />
@@ -1428,11 +1487,11 @@ export default function AccountsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">账号ID</Label>
-                      <p className="text-sm font-mono">{detailBalance.account_id}</p>
+                      <p className="text-sm font-mono break-all">{detailBalance.account_id}</p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">邮箱</Label>
-                      <p className="text-sm">{detailBalance.email || '未提供邮箱'}</p>
+                      <p className="text-sm break-all">{detailBalance.email || '未提供邮箱'}</p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">账号名称</Label>
@@ -1535,16 +1594,16 @@ export default function AccountsPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <ResponsiveDialogFooter className="shrink-0 px-4 pb-4 pt-2 border-t">
             <Button
               variant="outline"
               onClick={() => setIsKiroDetailDialogOpen(false)}
             >
               关闭
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {/* 确认对话框 */}
       <Dialog open={isConfirmDialogOpen} onOpenChange={(open) => {
