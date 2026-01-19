@@ -509,6 +509,27 @@ def _normalize_codex_responses_request(request_data: Dict[str, Any]) -> Dict[str
     """
     body = dict(request_data or {})
     body["stream"] = True
+    body["store"] = False
+    body["parallel_tool_calls"] = True
+    body["include"] = ["reasoning.encrypted_content"]
+
+    # CLIProxyAPI 实测：Codex Responses 会拒绝这些“限制/采样”字段（400 Bad Request）
+    body.pop("max_output_tokens", None)
+    body.pop("max_completion_tokens", None)
+    body.pop("temperature", None)
+    body.pop("top_p", None)
+    body.pop("service_tier", None)
+
+    # 兼容 `input: "text"` 的快捷写法，转换为 Codex 更稳定的 message 结构
+    input_value = body.get("input")
+    if isinstance(input_value, str):
+        body["input"] = [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": input_value}],
+            }
+        ]
     body.pop("previous_response_id", None)
     body.pop("prompt_cache_retention", None)
     body.pop("safety_identifier", None)
@@ -1094,7 +1115,7 @@ class CodexService:
             raise ValueError("账号缺少 ChatGPT account_id")
 
         ping_model = _pick_codex_ping_model(_get_supported_models())
-        body = _normalize_codex_responses_request({"model": ping_model or "gpt-5.2-codex", "input": "ping", "max_output_tokens": 1})
+        body = _normalize_codex_responses_request({"model": ping_model or "gpt-5.2-codex", "input": "ping"})
 
         # 刷新只依赖响应头 ratelimit；connect 超时尽量短，避免前端/反代先 504。
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
@@ -1194,6 +1215,11 @@ class CodexService:
                         raise ValueError(f"账号触发限额，已冻结至：{_iso(until)}")
                     raise ValueError("账号触发限额，已冻结")
 
+                err_compact = " ".join((err_text or "").split())
+                if err_compact:
+                    if len(err_compact) > 500:
+                        err_compact = err_compact[:500] + "..."
+                    raise ValueError(f"刷新失败：HTTP {resp.status_code}：{err_compact}")
                 raise ValueError(f"刷新失败：HTTP {resp.status_code}")
 
         finally:
