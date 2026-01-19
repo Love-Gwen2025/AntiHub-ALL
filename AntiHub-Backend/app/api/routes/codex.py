@@ -11,6 +11,8 @@ Codex 账号管理 API
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +33,7 @@ from app.services.codex_service import CodexService
 
 
 router = APIRouter(prefix="/api/codex", tags=["Codex账号管理"])
+logger = logging.getLogger(__name__)
 
 
 def get_codex_service(
@@ -296,7 +299,14 @@ async def refresh_codex_account(
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception:
+    except Exception as e:
+        logger.error(
+            "refresh codex account failed: user_id=%s account_id=%s error=%s",
+            current_user.id,
+            account_id,
+            type(e).__name__,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="刷新账号信息失败",

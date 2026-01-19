@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional, Set, Tuple
 import base64
 import hashlib
 import json
+import logging
+import os
 import secrets
 from uuid import uuid4
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -49,15 +51,29 @@ OPENAI_CREDIT_GRANTS_URLS = (
 
 SUPPORTED_MODELS = [
     "gpt-5.2-codex",
+    "gpt-5.2",
     "gpt-5.1-codex-max",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-mini",
+    "gpt-5.1",
     "gpt-5-codex",
+    "gpt-5-codex-mini",
+    "gpt-5",
 ]
+
+CODEX_MODEL_ALIASES = {
+    # Common client aliases (e.g. CLIProxyAPI example config)
+    "codex-latest": "gpt-5-codex",
+    "codex-mini": "gpt-5-codex-mini",
+}
 
 CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex"
 CODEX_RESPONSES_URL = f"{CODEX_API_BASE_URL}/responses"
 CODEX_DEFAULT_VERSION = "0.21.0"
 CODEX_OPENAI_BETA = "responses=experimental"
-CODEX_DEFAULT_USER_AGENT = "codex_cli_rs/0.50.0 (AntiHub Proxy)"
+CODEX_DEFAULT_USER_AGENT = "codex_cli_rs/0.50.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -213,6 +229,65 @@ def _safe_str(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _parse_codemodels_env(raw: str) -> list[str]:
+    value = (raw or "").strip()
+    if not value:
+        return []
+
+    if value.startswith("["):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            out: list[str] = []
+            for item in parsed:
+                s = _safe_str(item)
+                if s:
+                    out.append(s)
+            return out
+        return []
+
+    parts = [p.strip() for p in value.replace("\n", ",").split(",")]
+    return [p for p in parts if p]
+
+
+def _get_supported_models() -> list[str]:
+    env_raw = os.environ.get("CODEX_SUPPORTED_MODELS", "")
+    models = _parse_codemodels_env(env_raw)
+    if models:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for m in models:
+            key = m.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(m)
+        return deduped
+
+    return list(SUPPORTED_MODELS)
+
+
+def _pick_codex_ping_model(models: list[str]) -> str:
+    if not models:
+        return ""
+    preferred = ("gpt-5.2-codex", "gpt-5.1-codex", "gpt-5-codex")
+    lowered = {m.lower(): m for m in models}
+    for key in preferred:
+        if key in lowered:
+            return lowered[key]
+    return models[0]
+
+
+def _resolve_codex_model_name(model: Any) -> str:
+    raw = _safe_str(model)
+    if not raw:
+        return ""
+    alias = CODEX_MODEL_ALIASES.get(raw.lower())
+    return alias or raw
 
 
 def _parse_retry_after(headers: httpx.Headers, *, now: datetime) -> Optional[datetime]:
@@ -396,7 +471,7 @@ def _build_codex_headers(
     user_agent: Optional[str],
 ) -> Dict[str, str]:
     ua = (user_agent or "").strip() or CODEX_DEFAULT_USER_AGENT
-    session_id = uuid4().hex
+    session_id = str(uuid4())
     headers: Dict[str, str] = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {access_token}",
@@ -405,6 +480,7 @@ def _build_codex_headers(
         "Version": CODEX_DEFAULT_VERSION,
         "Openai-Beta": CODEX_OPENAI_BETA,
         "Session_id": session_id,
+        "Conversation_id": session_id,
         "User-Agent": ua,
         "Originator": "codex_cli_rs",
     }
@@ -420,16 +496,18 @@ class CodexService:
         self.repo = CodexAccountRepository(db)
 
     async def get_models(self) -> Dict[str, Any]:
+        models = _get_supported_models()
         return {
             "success": True,
-            "data": {"models": [{"id": m, "object": "model"} for m in SUPPORTED_MODELS], "object": "list"},
+            "data": {"models": [{"id": m, "object": "model"} for m in models], "object": "list"},
         }
 
     async def openai_list_models(self) -> Dict[str, Any]:
         """
         `/v1/models` 兼容格式（OpenAI 标准）：{ object: "list", data: [...] }
         """
-        return {"object": "list", "data": [{"id": m, "object": "model"} for m in SUPPORTED_MODELS]}
+        models = _get_supported_models()
+        return {"object": "list", "data": [{"id": m, "object": "model"} for m in models]}
 
     async def create_oauth_authorize_url(
         self,
@@ -736,6 +814,8 @@ class CodexService:
             exclude_ids.add(int(getattr(selected, "id", 0) or 0))
 
             body = _normalize_codex_responses_request(request_data)
+            if "model" in body:
+                body["model"] = _resolve_codex_model_name(body.get("model"))
             creds = self._load_account_credentials(selected)
             creds = await self._ensure_account_tokens(selected, creds)
 
@@ -938,7 +1018,16 @@ class CodexService:
         if not account:
             raise ValueError("账号不存在")
 
-        creds = self._load_account_credentials(account)
+        try:
+            creds = self._load_account_credentials(account)
+        except Exception as e:
+            logger.error(
+                "codex refresh: failed to load account credentials (decrypt/parse): user_id=%s account_id=%s",
+                user_id,
+                account_id,
+                exc_info=True,
+            )
+            raise ValueError("账号凭证解析失败：请检查后端加密密钥是否变更，必要时重新导入该账号") from e
         creds = await self._ensure_account_tokens(account, creds)
 
         access_token = _safe_str(creds.get("access_token"))
@@ -949,11 +1038,11 @@ class CodexService:
         if not chatgpt_account_id:
             raise ValueError("账号缺少 ChatGPT account_id")
 
-        body = _normalize_codex_responses_request(
-            {"model": SUPPORTED_MODELS[0], "input": "ping", "max_output_tokens": 1}
-        )
+        ping_model = _pick_codex_ping_model(_get_supported_models())
+        body = _normalize_codex_responses_request({"model": ping_model or "gpt-5.2-codex", "input": "ping", "max_output_tokens": 1})
 
-        client = httpx.AsyncClient(timeout=20.0)
+        timeout = httpx.Timeout(60.0)
+        client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
         resp: Optional[httpx.Response] = None
         try:
             # 最多重试 1 次：401 时尝试 refresh_token 刷新再打一次
@@ -964,7 +1053,18 @@ class CodexService:
                     user_agent=None,
                 )
                 req = client.build_request("POST", CODEX_RESPONSES_URL, json=body, headers=headers)
-                resp = await client.send(req, stream=True)
+                try:
+                    resp = await client.send(req, stream=True)
+                except httpx.HTTPError as e:
+                    logger.warning(
+                        "codex refresh: upstream request failed: user_id=%s account_id=%s attempt=%s error=%s",
+                        user_id,
+                        account_id,
+                        attempt,
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    raise ValueError(f"刷新失败：上游请求异常（{type(e).__name__}）") from e
 
                 if 200 <= resp.status_code < 300:
                     await self._update_account_after_success(account, resp.headers)
@@ -972,7 +1072,18 @@ class CodexService:
 
                 now = _now_utc()
                 retry_at = _parse_retry_after(resp.headers, now=now)
-                raw_err = await resp.aread()
+                try:
+                    raw_err = await resp.aread()
+                except Exception as e:
+                    logger.warning(
+                        "codex refresh: failed to read upstream error body: user_id=%s account_id=%s status=%s error=%s",
+                        user_id,
+                        account_id,
+                        resp.status_code,
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    raw_err = b""
                 err_text = ""
                 try:
                     err_text = raw_err.decode("utf-8", errors="replace")
@@ -991,7 +1102,16 @@ class CodexService:
                         await self._disable_account(account, reason="unauthorized")
                         raise ValueError("账号未授权（已禁用）")
 
-                    creds = self._load_account_credentials(account)
+                    try:
+                        creds = self._load_account_credentials(account)
+                    except Exception as e:
+                        logger.error(
+                            "codex refresh: failed to reload credentials after token refresh: user_id=%s account_id=%s",
+                            user_id,
+                            account_id,
+                            exc_info=True,
+                        )
+                        raise ValueError("token 已刷新但账号凭证解析失败，请尝试重新导入该账号") from e
                     access_token = _safe_str(creds.get("access_token"))
                     if not access_token:
                         await self._disable_account(account, reason="missing_access_token")

@@ -4,6 +4,9 @@ OpenAI兼容的API端点
 根据API key的config_type自动选择Antigravity / Kiro / Qwen / Codex配置
 用户通过我们的key/token调用，我们再用plug-in key调用plug-in-api
 """
+import asyncio
+import json
+import logging
 from typing import List, Dict, Any, Optional
 import time
 import httpx
@@ -29,6 +32,34 @@ from app.utils.openai_responses_compat import (
 
 
 router = APIRouter(prefix="/v1", tags=["OpenAI兼容API"])
+logger = logging.getLogger(__name__)
+
+
+def _truncate_sse_error_message(message: str, *, max_len: int = 2000) -> str:
+    msg = str(message or "").strip()
+    if not msg:
+        return "Unknown error"
+    if len(msg) <= max_len:
+        return msg
+    return msg[:max_len] + "…"
+
+
+def _responses_sse_error(
+    message: str,
+    *,
+    code: int = 500,
+    error_type: str = "upstream_error",
+) -> bytes:
+    payload = {
+        "type": "error",
+        "error": {
+            "message": _truncate_sse_error_message(message),
+            "type": error_type,
+            "code": int(code or 500),
+        },
+    }
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"event: error\ndata: {data}\n\n".encode("utf-8")
 
 def get_kiro_service(
     db: AsyncSession = Depends(get_db_session),
@@ -175,17 +206,15 @@ async def responses(
 
             if stream:
                 tracker = SSEUsageTracker()
+                client, resp, _account = await codex_service.open_codex_responses_stream(
+                    user_id=current_user.id,
+                    request_data=request_json,
+                    user_agent=raw_request.headers.get("User-Agent"),
+                )
 
                 async def generate():
                     had_exception = False
-                    client = None
-                    resp = None
                     try:
-                        client, resp, _account = await codex_service.open_codex_responses_stream(
-                            user_id=current_user.id,
-                            request_data=request_json,
-                            user_agent=raw_request.headers.get("User-Agent"),
-                        )
                         async for chunk in resp.aiter_bytes():
                             if isinstance(chunk, (bytes, bytearray)):
                                 b = bytes(chunk)
@@ -193,12 +222,29 @@ async def responses(
                                 b = str(chunk).encode("utf-8", errors="replace")
                             tracker.feed(b)
                             yield b
+                    except asyncio.CancelledError:
+                        had_exception = True
+                        tracker.success = False
+                        tracker.status_code = tracker.status_code or 499
+                        tracker.error_message = tracker.error_message or "client disconnected"
+                        return
                     except Exception as e:
                         had_exception = True
                         tracker.success = False
                         tracker.status_code = tracker.status_code or 500
                         tracker.error_message = str(e)
-                        raise
+                        logger.error(
+                            "codex /v1/responses stream failed: user_id=%s error=%s",
+                            current_user.id,
+                            type(e).__name__,
+                            exc_info=True,
+                        )
+                        yield _responses_sse_error(
+                            str(e) or "Codex upstream request failed",
+                            code=tracker.status_code or 500,
+                            error_type="codex_upstream_error",
+                        )
+                        return
                     finally:
                         tracker.finalize()
                         duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -310,12 +356,30 @@ async def responses(
                                 yield ev
                             if done:
                                 break
+                except asyncio.CancelledError:
+                    had_exception = True
+                    tracker.success = False
+                    tracker.status_code = tracker.status_code or 499
+                    tracker.error_message = tracker.error_message or "client disconnected"
+                    return
                 except Exception as e:
                     had_exception = True
                     tracker.success = False
                     tracker.status_code = tracker.status_code or 500
                     tracker.error_message = str(e)
-                    raise
+                    logger.error(
+                        "/v1/responses stream failed: user_id=%s config_type=%s error=%s",
+                        current_user.id,
+                        effective_config_type,
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    yield _responses_sse_error(
+                        str(e) or "Upstream request failed",
+                        code=tracker.status_code or 500,
+                        error_type="upstream_error",
+                    )
+                    return
                 finally:
                     tracker.finalize()
 
@@ -536,6 +600,7 @@ async def chat_completions(
 
     effective_config_type = config_type or "antigravity"
     use_kiro = effective_config_type == "kiro"
+    use_codex = effective_config_type == "codex"
 
     try:
         if use_codex:
