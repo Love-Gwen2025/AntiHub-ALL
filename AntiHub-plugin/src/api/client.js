@@ -24,6 +24,7 @@ export async function generateAssistantResponse(requestBody, callback, endpointI
     'User-Agent': config.api.userAgent,
     'Authorization': `Bearer ${token.access_token}`,
     'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
     'Accept-Encoding': 'gzip'
   };
   
@@ -109,10 +110,14 @@ export async function generateAssistantResponse(requestBody, callback, endpointI
     
     const chunk = decoder.decode(value);
     chunkCount++;
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
-    
+    const lines = chunk.split('\n');
+
     for (const line of lines) {
-      const jsonStr = line.slice(6);
+      const trimmedLine = typeof line === 'string' ? line.trim() : '';
+      if (!trimmedLine.startsWith('data:')) continue;
+
+      const jsonStr = trimmedLine.slice('data:'.length).trim();
+      if (!jsonStr || jsonStr === '[DONE]') continue;
       try {
         const data = JSON.parse(jsonStr);
         

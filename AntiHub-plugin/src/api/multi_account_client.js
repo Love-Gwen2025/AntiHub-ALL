@@ -263,6 +263,7 @@ class MultiAccountClient {
       'User-Agent': config.api.userAgent,
       'Authorization': `Bearer ${account.access_token}`,
       'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
       'Accept-Encoding': 'gzip'
     };
     
@@ -501,10 +502,11 @@ class MultiAccountClient {
       buffer = lines.pop() || '';
       
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr) continue;
+        const trimmedLine = typeof line === 'string' ? line.trim() : '';
+        if (!trimmedLine.startsWith('data:')) continue;
+
+        const jsonStr = trimmedLine.slice('data:'.length).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
         
         try {
           const data = JSON.parse(jsonStr);

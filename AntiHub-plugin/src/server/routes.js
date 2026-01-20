@@ -696,7 +696,7 @@ router.post('/api/accounts/:cookie_id/refresh', authenticateApiKey, async (req, 
  * 获取当前账号可用的 GCP Project 列表（Cloud Resource Manager）
  * GET /api/accounts/:cookie_id/projects
  */
-router.get('/api/accounts/:cookie_id/projects', authenticateApiKey, async (req, res) => {
+  router.get('/api/accounts/:cookie_id/projects', authenticateApiKey, async (req, res) => {
   try {
     const { cookie_id } = req.params;
     const account = await accountService.getAccountByCookieId(cookie_id);
@@ -723,8 +723,41 @@ router.get('/api/accounts/:cookie_id/projects', authenticateApiKey, async (req, 
       await accountService.updateAccountToken(cookie_id, accessToken, expires_at);
     }
 
-    const projects = await projectService.listGcpProjects(accessToken);
-    const defaultProjectId = projectService.selectDefaultGcpProjectId(projects);
+    const currentProjectId = typeof account.project_id_0 === 'string' ? account.project_id_0.trim() : '';
+
+    // 1) GCP Project 列表（可选能力）：很多环境/账号并不具备 CRM 权限，失败时不应阻塞 Antigravity 的正常使用。
+    let projects = [];
+    let defaultProjectId = '';
+    try {
+      projects = await projectService.listGcpProjects(accessToken);
+      defaultProjectId = projectService.selectDefaultGcpProjectId(projects);
+    } catch (error) {
+      logger.warn(`[projects] listGcpProjects failed, fallback to Code Assist project only: cookie_id=${cookie_id}, error=${error?.message || error}`);
+      projects = [];
+      defaultProjectId = '';
+    }
+
+    // 2) Antigravity/Code Assist 实际使用的项目：cloudaicompanionProject（来自 loadCodeAssist / onboardUser）
+    let codeAssistProjectId = '';
+    try {
+      const projectData = await projectService.loadCodeAssist(accessToken);
+      codeAssistProjectId = projectService.extractProjectId(projectData?.cloudaicompanionProject);
+
+      // 没返回 cloudaicompanionProject 时，按 CLIProxyAPI 的逻辑尝试 onboardUser 拿到真实 project_id
+      if (!codeAssistProjectId && !currentProjectId) {
+        const tierId = projectService.getDefaultTierId(projectData);
+        codeAssistProjectId = await projectService.onboardUser(accessToken, tierId);
+      }
+    } catch (error) {
+      logger.warn(`[projects] loadCodeAssist/onboardUser failed: cookie_id=${cookie_id}, error=${error?.message || error}`);
+    }
+
+    // 优先建议 Code Assist project（这才是 Antigravity 上游真正用的 project）
+    if (codeAssistProjectId) {
+      defaultProjectId = codeAssistProjectId;
+    } else if (!defaultProjectId) {
+      defaultProjectId = currentProjectId || '';
+    }
 
     const safeProjects = Array.isArray(projects)
       ? projects
@@ -736,11 +769,22 @@ router.get('/api/accounts/:cookie_id/projects', authenticateApiKey, async (req, 
           .filter((p) => typeof p.project_id === 'string' && p.project_id.trim() !== '')
       : [];
 
+    // 确保当前/默认项目能在下拉里被选到（它们可能不是“你的 GCP 项目”，而是 cloudaicompanionProject）。
+    const ensureProjectItem = (projectId, name) => {
+      const pid = typeof projectId === 'string' ? projectId.trim() : '';
+      if (!pid) return;
+      if (safeProjects.some((p) => p.project_id === pid)) return;
+      safeProjects.unshift({ project_id: pid, name: name || '' });
+    };
+
+    ensureProjectItem(currentProjectId, 'current');
+    ensureProjectItem(defaultProjectId, codeAssistProjectId ? 'cloudaicompanionProject' : 'default');
+
     res.json({
       success: true,
       data: {
         cookie_id,
-        current_project_id: account.project_id_0 || '',
+        current_project_id: currentProjectId || '',
         default_project_id: defaultProjectId || '',
         projects: safeProjects,
       },
