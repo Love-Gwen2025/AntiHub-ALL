@@ -20,11 +20,22 @@
 3. Kiro-Token: 已完全支持
 4. Kiro-AWS IMA: 已完全支持
 5. QwenCli: 已完成开发，待测试
+6. CodexCLI: 初步测试完成，等高强度测试
 
 ## 你需要准备
 
 - 必配：你自己的密钥（`JWT_SECRET_KEY`、`PLUGIN_ADMIN_API_KEY`、`PLUGIN_API_ENCRYPTION_KEY`）
 - 可选：外部 PostgreSQL / Redis（如果你不想用 compose 自带的）
+
+## 一键部署
+
+Linux运行`deploy.sh`即可（会先启动 `postgres/redis`，同步/初始化两个数据库，再启动主服务；默认 plugin 复用 PostgreSQL 超管账号）
+
+如需手动同步（复用旧数据卷但重写了 `.env` 密码时很有用）：
+
+```bash
+docker compose -f docker-compose.yml -f docker/docker-compose.db-init.yml run --rm db-init
+```
 
 ## 快速开始
 

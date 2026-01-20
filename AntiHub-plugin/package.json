@@ -1,7 +1,7 @@
 {
   "name": "antigravity-to-openai",
   "version": "1.0.0",
-  "description": "Antigravity API 转 OpenAI 格式的代理服务",
+  "description": "Antigravity API to OpenAI proxy service",
   "type": "module",
   "main": "src/server/index.js",
   "scripts": {
@@ -28,4 +28,3 @@
     "node": ">=18.0.0"
   }
 }
-

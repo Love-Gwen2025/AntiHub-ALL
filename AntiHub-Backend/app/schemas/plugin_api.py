@@ -89,6 +89,11 @@ class UpdateAccountNameRequest(BaseModel):
     name: str = Field(..., description="账号名称")
 
 
+class UpdateAccountProjectIdRequest(BaseModel):
+    """更新账号 Project ID"""
+    project_id: str = Field(..., description="Google Cloud Project ID")
+
+
 class ChatCompletionRequest(BaseModel):
     """聊天补全请求（支持多模态）"""
     model: str = Field(..., description="模型名称")

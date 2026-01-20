@@ -30,14 +30,16 @@ class MultiAccountClient {
     return projectId.trim();
   }
 
-  async ensureAccountProjectId(account) {
+  async ensureAccountProjectId(account, options = {}) {
+    const forceRefresh = options?.forceRefresh === true;
     const existing = this.normalizeProjectId(account?.project_id_0);
-    if (existing) {
+    if (existing && !forceRefresh) {
       account.project_id_0 = existing;
       return existing;
     }
 
-    logger.warn(`[project_id] 缺失，尝试刷新: cookie_id=${account?.cookie_id}`);
+    const cookieId = account?.cookie_id;
+    logger.warn(`[project_id] ${forceRefresh ? '强制刷新' : '缺失，尝试刷新'}: cookie_id=${cookieId}`);
 
     try {
       const updated = await projectService.updateAccountProjectIds(account.cookie_id, account.access_token);
@@ -47,10 +49,10 @@ class MultiAccountClient {
         return refreshed;
       }
     } catch (error) {
-      logger.warn(`[project_id] 刷新失败: cookie_id=${account?.cookie_id}, error=${error?.message || error}`);
+      logger.warn(`[project_id] 刷新失败: cookie_id=${cookieId}, error=${error?.message || error}`);
     }
 
-    return '';
+    return forceRefresh ? '' : existing;
   }
 
   /**
@@ -263,6 +265,7 @@ class MultiAccountClient {
       'User-Agent': config.api.userAgent,
       'Authorization': `Bearer ${account.access_token}`,
       'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
       'Accept-Encoding': 'gzip'
     };
     
@@ -287,23 +290,47 @@ class MultiAccountClient {
       } finally {
         clearTimeout(timeout);
       }
-      
+
       if (!response.ok) {
         const responseText = await response.text();
-        
+
         if (response.status === 403) {
           // 判断是否是 "The caller does not have permission" 错误
-          const isPermissionDenied = responseText.includes('The caller does not have permission');
-          
+          const isPermissionDenied =
+            responseText.includes('The caller does not have permission') ||
+            responseText.includes('PERMISSION_DENIED');
+
           // 记录第一次403错误的类型（只在第一次请求时记录）
           const currentFirstError403Type = firstError403Type === null
             ? (isPermissionDenied ? 'PERMISSION_DENIED' : '403')
             : firstError403Type;
-          
+
+          // 403 很常见的一个原因是 project_id 不对（历史版本可能写入了 CRM 的 GCP 项目ID），先强制刷新一次再试。
+          if (projectRetryCount < 1) {
+            logger.warn(`[403错误] 尝试强制刷新 project_id 后重试: cookie_id=${account.cookie_id}`);
+            const refreshedProjectId = await this.ensureAccountProjectId(account, { forceRefresh: true });
+            if (refreshedProjectId) {
+              requestBody.project = refreshedProjectId;
+              return await this.generateResponse(
+                requestBody,
+                callback,
+                user_id,
+                model_name,
+                user,
+                account,
+                excludeCookieIds,
+                retryCount,
+                endpointIndex,
+                currentFirstError403Type,
+                projectRetryCount + 1
+              );
+            }
+          }
+
           // 所有403错误都尝试切换端点重试
           const nextEndpointIndex = endpointIndex + 1;
           const totalEndpoints = getEndpointCount();
-          
+
           if (nextEndpointIndex < totalEndpoints) {
             // 还有其他端点可以尝试
             logger.warn(`[403错误] 端点[${endpointIndex}]返回403，尝试切换到端点[${nextEndpointIndex}]: cookie_id=${account.cookie_id}`);
@@ -355,7 +382,7 @@ class MultiAccountClient {
           if (responseText.includes('RESOURCE_PROJECT_INVALID')) {
             if (projectRetryCount < 1) {
               logger.warn(`[400错误] RESOURCE_PROJECT_INVALID，尝试刷新 project_id 后重试: cookie_id=${account.cookie_id}`);
-              const refreshedProjectId = await this.ensureAccountProjectId(account);
+              const refreshedProjectId = await this.ensureAccountProjectId(account, { forceRefresh: true });
               if (refreshedProjectId) {
                 requestBody.project = refreshedProjectId;
                 return await this.generateResponse(requestBody, callback, user_id, model_name, user, account, excludeCookieIds, retryCount, endpointIndex, firstError403Type, projectRetryCount + 1);
@@ -501,10 +528,11 @@ class MultiAccountClient {
       buffer = lines.pop() || '';
       
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr) continue;
+        const trimmedLine = typeof line === 'string' ? line.trim() : '';
+        if (!trimmedLine.startsWith('data:')) continue;
+
+        const jsonStr = trimmedLine.slice('data:'.length).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
         
         try {
           const data = JSON.parse(jsonStr);
@@ -893,23 +921,46 @@ class MultiAccountClient {
       } finally {
         clearTimeout(timeout);
       }
-      
+
       if (!response.ok) {
         const responseText = await response.text();
-        
+
         if (response.status === 403) {
           // 判断是否是 "The caller does not have permission" 错误
-          const isPermissionDenied = responseText.includes('The caller does not have permission');
-          
+          const isPermissionDenied =
+            responseText.includes('The caller does not have permission') ||
+            responseText.includes('PERMISSION_DENIED');
+
           // 记录第一次403错误的类型（只在第一次请求时记录）
           const currentFirstError403Type = firstError403Type === null
             ? (isPermissionDenied ? 'PERMISSION_DENIED' : 'OTHER_403')
             : firstError403Type;
-          
+
+          // 403 也可能是 project_id 不对，先强制刷新一次再试。
+          if (projectRetryCount < 1) {
+            logger.warn(`[图片生成-403错误] 尝试强制刷新 project_id 后重试: cookie_id=${account.cookie_id}`);
+            const refreshedProjectId = await this.ensureAccountProjectId(account, { forceRefresh: true });
+            if (refreshedProjectId) {
+              requestBody.project = refreshedProjectId;
+              return await this.generateImage(
+                requestBody,
+                user_id,
+                model_name,
+                user,
+                account,
+                excludeCookieIds,
+                retryCount,
+                endpointIndex,
+                currentFirstError403Type,
+                projectRetryCount + 1
+              );
+            }
+          }
+
           // 所有403错误都尝试切换端点重试
           const nextEndpointIndex = endpointIndex + 1;
           const totalEndpoints = getEndpointCount();
-          
+
           if (nextEndpointIndex < totalEndpoints) {
             // 还有其他端点可以尝试
             logger.warn(`[图片生成-403错误] 端点[${endpointIndex}]返回403，尝试切换到端点[${nextEndpointIndex}]: cookie_id=${account.cookie_id}`);
@@ -958,7 +1009,7 @@ class MultiAccountClient {
           if (responseText.includes('RESOURCE_PROJECT_INVALID')) {
             if (projectRetryCount < 1) {
               logger.warn(`[图片生成-400错误] RESOURCE_PROJECT_INVALID，尝试刷新 project_id 后重试: cookie_id=${account.cookie_id}`);
-              const refreshedProjectId = await this.ensureAccountProjectId(account);
+              const refreshedProjectId = await this.ensureAccountProjectId(account, { forceRefresh: true });
               if (refreshedProjectId) {
                 requestBody.project = refreshedProjectId;
                 return await this.generateImage(requestBody, user_id, model_name, user, account, excludeCookieIds, retryCount, endpointIndex, firstError403Type, projectRetryCount + 1);

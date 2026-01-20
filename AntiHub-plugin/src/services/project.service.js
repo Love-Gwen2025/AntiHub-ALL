@@ -1,24 +1,18 @@
 import logger from '../utils/logger.js';
 import accountService from './account.service.js';
-import config from '../config/config.js';
+
+// Keep project discovery behavior consistent with CLIProxyAPI (CPA).
+// These headers affect how Cloud Code returns cloudaicompanionProject for Antigravity.
+const CODE_ASSIST_USER_AGENT = 'google-api-nodejs-client/9.15.1';
+const CODE_ASSIST_X_GOOG_API_CLIENT = 'google-cloud-sdk vscode_cloudshelleditor/0.1';
+const CODE_ASSIST_CLIENT_METADATA = '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}';
 
 class ProjectService {
   getApiEndpoints() {
-    const endpoints = Array.isArray(config?.api?.endpoints) ? config.api.endpoints : [];
-    if (endpoints.length > 0) {
-      return endpoints
-        .map((endpoint) => ({
-          baseUrl: endpoint?.baseUrl,
-          host: endpoint?.host,
-        }))
-        .filter((endpoint) => typeof endpoint.baseUrl === 'string' && endpoint.baseUrl && typeof endpoint.host === 'string' && endpoint.host);
-    }
-
-    // fallback: keep behavior consistent with default config
     return [
       {
-        baseUrl: 'https://daily-cloudcode-pa.sandbox.googleapis.com',
-        host: 'daily-cloudcode-pa.sandbox.googleapis.com',
+        baseUrl: 'https://cloudcode-pa.googleapis.com',
+        host: 'cloudcode-pa.googleapis.com',
       },
     ];
   }
@@ -26,10 +20,12 @@ class ProjectService {
   buildRequestHeaders({ accessToken, host }) {
     return {
       Host: host,
-      'User-Agent': config.api.userAgent,
+      'User-Agent': CODE_ASSIST_USER_AGENT,
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Accept-Encoding': 'gzip',
+      'X-Goog-Api-Client': CODE_ASSIST_X_GOOG_API_CLIENT,
+      'Client-Metadata': CODE_ASSIST_CLIENT_METADATA,
     };
   }
 

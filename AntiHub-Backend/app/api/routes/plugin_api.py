@@ -24,6 +24,7 @@ from app.schemas.plugin_api import (
     UpdateCookiePreferenceRequest,
     UpdateAccountStatusRequest,
     UpdateAccountNameRequest,
+    UpdateAccountProjectIdRequest,
     UpdateAccountTypeRequest,
     ChatCompletionRequest,
     PluginAPIResponse,
@@ -236,6 +237,35 @@ async def get_account(
 
 
 @router.get(
+    "/accounts/{cookie_id}/credentials",
+    summary="导出账号凭证",
+    description="导出指定账号保存的凭证信息（敏感），用于前端复制为 JSON"
+)
+async def get_account_credentials(
+    cookie_id: str,
+    current_user: User = Depends(get_current_user),
+    service: PluginAPIService = Depends(get_plugin_api_service),
+):
+    """导出账号凭证（敏感信息）"""
+    try:
+        return await service.get_account_credentials(current_user.id, cookie_id)
+    except httpx.HTTPStatusError as e:
+        error_data = getattr(e, "response_data", {"detail": str(e)})
+        if isinstance(error_data, dict):
+            detail = error_data.get("detail") or error_data.get("error") or error_data
+        else:
+            detail = error_data
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="导出账号凭证失败",
+        )
+
+
+@router.get(
     "/accounts/{cookie_id}/detail",
     summary="获取账号详情",
     description="获取指定账号的邮箱、订阅层级、导入时间等信息"
@@ -297,6 +327,63 @@ async def refresh_account(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="刷新账号失败"
         )
+
+
+@router.get(
+    "/accounts/{cookie_id}/projects",
+    summary="获取可选 Project 列表",
+    description="通过 Cloud Resource Manager 获取该账号可见的 GCP Projects 列表",
+)
+async def get_account_projects(
+    cookie_id: str,
+    current_user: User = Depends(get_current_user),
+    service: PluginAPIService = Depends(get_plugin_api_service),
+):
+    """获取账号可用项目列表"""
+    try:
+        return await service.get_account_projects(current_user.id, cookie_id)
+    except httpx.HTTPStatusError as e:
+        error_data = getattr(e, "response_data", {"detail": str(e)})
+        if isinstance(error_data, dict) and "detail" in error_data:
+            detail = error_data["detail"]
+        elif isinstance(error_data, dict) and "error" in error_data:
+            detail = error_data["error"]
+        else:
+            detail = error_data
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="获取项目列表失败")
+
+
+@router.put(
+    "/accounts/{cookie_id}/project-id",
+    summary="更新账号 Project ID",
+    description="设置该账号使用的 project_id_0（可自定义 / 可从列表选择）",
+)
+async def update_account_project_id(
+    cookie_id: str,
+    request: UpdateAccountProjectIdRequest,
+    current_user: User = Depends(get_current_user),
+    service: PluginAPIService = Depends(get_plugin_api_service),
+):
+    """更新账号 Project ID"""
+    try:
+        return await service.update_account_project_id(current_user.id, cookie_id, request.project_id)
+    except httpx.HTTPStatusError as e:
+        error_data = getattr(e, "response_data", {"detail": str(e)})
+        if isinstance(error_data, dict) and "detail" in error_data:
+            detail = error_data["detail"]
+        elif isinstance(error_data, dict) and "error" in error_data:
+            detail = error_data["error"]
+        else:
+            detail = error_data
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="更新Project ID失败")
 
 
 @router.put(

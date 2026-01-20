@@ -627,6 +627,18 @@ export async function getAccount(cookieId: string): Promise<Account> {
 }
 
 /**
+ * 导出账号凭证（敏感信息）
+ * 用于前端“复制凭证为JSON”
+ */
+export async function getAccountCredentials(cookieId: string): Promise<Record<string, any>> {
+  const result = await fetchWithAuth<{ success: boolean; data: Record<string, any> }>(
+    `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}/credentials`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+/**
  * 删除账号
  */
 export interface AntigravityAccountDetail {
@@ -654,6 +666,38 @@ export async function refreshAccount(cookieId: string): Promise<Account> {
   const result = await fetchWithAuth<{ success: boolean; data: Account }>(
     `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}/refresh`,
     { method: 'POST' }
+  );
+  return result.data;
+}
+
+export interface GcpProjectItem {
+  project_id: string;
+  name?: string;
+  lifecycle_state?: string;
+}
+
+export interface AccountProjects {
+  cookie_id: string;
+  current_project_id: string;
+  default_project_id: string;
+  projects: GcpProjectItem[];
+}
+
+export async function getAccountProjects(cookieId: string): Promise<AccountProjects> {
+  const result = await fetchWithAuth<{ success: boolean; data: AccountProjects }>(
+    `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}/projects`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function updateAccountProjectId(cookieId: string, projectId: string): Promise<Account> {
+  const result = await fetchWithAuth<{ success: boolean; data: Account }>(
+    `${API_BASE_URL}/api/plugin-api/accounts/${cookieId}/project-id`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ project_id: projectId }),
+    }
   );
   return result.data;
 }
@@ -715,7 +759,7 @@ export interface PluginAPIKey {
   user_id: number;
   key_preview: string;
   name: string;
-  config_type: 'antigravity' | 'kiro' | 'qwen'; // 配置类型
+  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex'; // 配置类型
   is_active: boolean;
   created_at: string;
   last_used_at: string | null;
@@ -727,7 +771,7 @@ export interface CreateAPIKeyResponse {
   user_id: number;
   key: string;
   name: string;
-  config_type: 'antigravity' | 'kiro' | 'qwen'; // 配置类型
+  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex'; // 配置类型
   is_active: boolean;
   created_at: string;
   last_used_at: string | null;
@@ -758,7 +802,7 @@ export async function getAPIKeyInfo(): Promise<PluginAPIKey | null> {
  */
 export async function generateAPIKey(
   name: string = 'My API Key',
-  configType: 'antigravity' | 'kiro' | 'qwen' = 'antigravity'
+  configType: 'antigravity' | 'kiro' | 'qwen' | 'codex' = 'antigravity'
 ): Promise<CreateAPIKeyResponse> {
   return fetchWithAuth<CreateAPIKeyResponse>(
     `${API_BASE_URL}/api/api-keys`,
@@ -971,7 +1015,7 @@ export async function getRequestUsageLogs(params?: {
 
 // ==================== 聊天相关 API ====================
 
-export type ApiType = 'antigravity' | 'kiro' | 'qwen';
+export type ApiType = 'antigravity' | 'kiro' | 'qwen' | 'codex';
 
 export interface OpenAIModel {
   id: string;
@@ -1566,6 +1610,18 @@ export async function getKiroAccount(accountId: string): Promise<KiroAccount> {
 }
 
 /**
+ * 导出Kiro账号凭证（敏感信息）
+ * 用于前端“复制凭证为JSON”
+ */
+export async function getKiroAccountCredentials(accountId: string): Promise<Record<string, any>> {
+  const result = await fetchWithAuth<{ success: boolean; data: Record<string, any> }>(
+    `${API_BASE_URL}/api/kiro/accounts/${accountId}/credentials`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+/**
  * 更新Kiro账号状态
  */
 export async function updateKiroAccountStatus(accountId: string, status: number): Promise<any> {
@@ -1857,6 +1913,18 @@ export async function getQwenAccount(accountId: string): Promise<QwenAccount> {
   return result.data;
 }
 
+/**
+ * 导出Qwen账号凭证（敏感信息）
+ * 用于前端“复制凭证为JSON”
+ */
+export async function getQwenAccountCredentials(accountId: string): Promise<Record<string, any>> {
+  const result = await fetchWithAuth<{ success: boolean; data: Record<string, any> }>(
+    `${API_BASE_URL}/api/qwen/accounts/${accountId}/credentials`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
 export async function updateQwenAccountStatus(accountId: string, status: number): Promise<QwenAccount> {
   const result = await fetchWithAuth<{ success: boolean; data: QwenAccount }>(
     `${API_BASE_URL}/api/qwen/accounts/${accountId}/status`,
@@ -1920,6 +1988,221 @@ export async function upsertKiroSubscriptionModelRule(
       method: 'PUT',
       body: JSON.stringify({ subscription, model_ids: modelIds }),
     }
+  );
+  return result.data;
+}
+
+// ==================== Codex 账号管理相关 API ====================
+
+export interface CodexAccount {
+  account_id: number;
+  user_id: number;
+  account_name: string;
+  status: number; // 0=禁用, 1=启用
+  is_shared: number;
+  email?: string | null;
+  openai_account_id?: string | null;
+  chatgpt_plan_type?: string | null;
+  token_expires_at?: string | null;
+  last_refresh_at?: string | null;
+  quota_remaining?: number | null;
+  quota_currency?: string | null;
+  quota_updated_at?: string | null;
+  limit_5h_used_percent?: number | null;
+  limit_5h_reset_at?: string | null;
+  limit_week_used_percent?: number | null;
+  limit_week_reset_at?: string | null;
+  freeze_reason?: string | null; // "week" | "5h"
+  frozen_until?: string | null;
+  is_frozen?: boolean;
+  effective_status?: number; // 0=不可用(禁用/冻结), 1=可用
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string | null;
+}
+
+export interface CodexOAuthAuthorizeResponse {
+  auth_url: string;
+  state: string;
+  expires_in: number;
+}
+
+export async function getCodexModels(): Promise<any> {
+  return fetchWithAuth<any>(`${API_BASE_URL}/api/codex/models`, { method: 'GET' });
+}
+
+export async function getCodexOAuthAuthorizeUrl(payload: {
+  is_shared?: number;
+  account_name?: string;
+} = {}): Promise<CodexOAuthAuthorizeResponse> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexOAuthAuthorizeResponse }>(
+    `${API_BASE_URL}/api/codex/oauth/authorize`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        is_shared: payload.is_shared ?? 0,
+        account_name: payload.account_name,
+      }),
+    }
+  );
+  return result.data;
+}
+
+export async function submitCodexOAuthCallback(callbackUrl: string): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/oauth/callback`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ callback_url: callbackUrl }),
+    }
+  );
+  return result.data;
+}
+
+export async function importCodexAccount(payload: {
+  credential_json: string;
+  is_shared?: number;
+  account_name?: string;
+}): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/import`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        credential_json: payload.credential_json,
+        is_shared: payload.is_shared ?? 0,
+        account_name: payload.account_name,
+      }),
+    }
+  );
+  return result.data;
+}
+
+export async function getCodexAccounts(): Promise<CodexAccount[]> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount[] }>(
+    `${API_BASE_URL}/api/codex/accounts`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function getCodexAccountCredentials(accountId: number): Promise<Record<string, any>> {
+  const result = await fetchWithAuth<{ success: boolean; data: Record<string, any> }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/credentials`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function refreshCodexAccount(accountId: number): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/refresh`,
+    { method: 'POST' }
+  );
+  return result.data;
+}
+
+export interface CodexWhamUsageWindow {
+  used_percent: number | null;
+  limit_window_seconds: number | null;
+  reset_after_seconds: number | null;
+  reset_at: string | null;
+}
+
+export interface CodexWhamUsageRateLimit {
+  allowed: boolean | null;
+  limit_reached: boolean | null;
+  primary_window: CodexWhamUsageWindow;
+  secondary_window?: CodexWhamUsageWindow;
+}
+
+export interface CodexWhamUsageParsed {
+  plan_type: string | null;
+  rate_limit: CodexWhamUsageRateLimit;
+  code_review_rate_limit: CodexWhamUsageRateLimit;
+}
+
+export interface CodexWhamUsageData {
+  fetched_at: string;
+  raw: Record<string, any>;
+  parsed: CodexWhamUsageParsed;
+}
+
+export async function getCodexWhamUsage(accountId: number): Promise<CodexWhamUsageData> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexWhamUsageData }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/wham-usage`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function updateCodexAccountStatus(accountId: number, status: number): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/status`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateCodexAccountName(accountId: number, accountName: string): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/name`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ account_name: accountName }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateCodexAccountQuota(
+  accountId: number,
+  payload: { quota_remaining?: number | null; quota_currency?: string | null }
+): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/quota`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        quota_remaining: payload.quota_remaining ?? null,
+        quota_currency: payload.quota_currency ?? null,
+      }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateCodexAccountLimits(
+  accountId: number,
+  payload: {
+    limit_5h_used_percent?: number | null;
+    limit_5h_reset_at?: string | null;
+    limit_week_used_percent?: number | null;
+    limit_week_reset_at?: string | null;
+  }
+): Promise<CodexAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: CodexAccount }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}/limits`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        limit_5h_used_percent: payload.limit_5h_used_percent ?? null,
+        limit_5h_reset_at: payload.limit_5h_reset_at ?? null,
+        limit_week_used_percent: payload.limit_week_used_percent ?? null,
+        limit_week_reset_at: payload.limit_week_reset_at ?? null,
+      }),
+    }
+  );
+  return result.data;
+}
+
+export async function deleteCodexAccount(accountId: number): Promise<any> {
+  const result = await fetchWithAuth<{ success: boolean; data: any }>(
+    `${API_BASE_URL}/api/codex/accounts/${accountId}`,
+    { method: 'DELETE' }
   );
   return result.data;
 }
