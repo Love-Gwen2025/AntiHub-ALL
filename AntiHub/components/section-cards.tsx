@@ -20,6 +20,7 @@ import {
   getRequestUsageStats,
   getAccounts,
   getQwenAccounts,
+  getCodexAccounts,
 } from "@/lib/api"
 
 interface ComputedStats {
@@ -42,12 +43,15 @@ export function SectionCards() {
         const now = new Date();
         const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        const [antigravityAccounts, antigravityConsumption, qwenAccounts, qwenStats24h, qwenStatsAll] = await Promise.all([
+        const [antigravityAccounts, antigravityConsumption, qwenAccounts, qwenStats24h, qwenStatsAll, codexAccounts, codexStats24h, codexStatsAll] = await Promise.all([
           getAccounts(),
           getQuotaConsumption({ limit: 1000 }),
           getQwenAccounts().catch(() => []),
           getRequestUsageStats({ start_date: last24h.toISOString(), config_type: 'qwen' }).catch(() => null),
           getRequestUsageStats({ config_type: 'qwen' }).catch(() => null),
+          getCodexAccounts().catch(() => []),
+          getRequestUsageStats({ start_date: last24h.toISOString(), config_type: 'codex' }).catch(() => null),
+          getRequestUsageStats({ config_type: 'codex' }).catch(() => null),
         ]);
 
         // 计算24小时内的消耗
@@ -59,6 +63,9 @@ export function SectionCards() {
 
         const qwenCallsLast24h = qwenStats24h?.total_requests || 0;
         const qwenTotalRequests = qwenStatsAll?.total_requests || 0;
+
+        const codexCallsLast24h = codexStats24h?.total_requests || 0;
+        const codexTotalRequests = codexStatsAll?.total_requests || 0;
 
         // 获取 Kiro 数据
         let kiroAccounts: any[] = [];
@@ -95,18 +102,19 @@ export function SectionCards() {
           console.warn('加载 Kiro 数据失败，仅显示 Antigravity 数据', err);
         }
 
-        const totalAccounts = antigravityAccounts.length + kiroAccounts.length + qwenAccounts.length;
+        const totalAccounts = antigravityAccounts.length + kiroAccounts.length + qwenAccounts.length + codexAccounts.length;
         const activeAccounts =
           antigravityAccounts.filter((a) => a.status === 1).length +
           kiroAccounts.filter((a) => a.status === 1).length +
-          qwenAccounts.filter((a) => a.status === 1).length;
+          qwenAccounts.filter((a) => a.status === 1).length +
+          codexAccounts.filter((a: any) => (a.effective_status ?? a.status) === 1).length;
 
         setStats({
           totalAccounts,
           activeAccounts,
           consumedLast24h: antigravityConsumedLast24h + kiroConsumedLast24h,
-          callsLast24h: antigravityCallsLast24h + kiroCallsLast24h + qwenCallsLast24h,
-          totalRequests: antigravityTotalRequests + totalKiroRequests + qwenTotalRequests,
+          callsLast24h: antigravityCallsLast24h + kiroCallsLast24h + qwenCallsLast24h + codexCallsLast24h,
+          totalRequests: antigravityTotalRequests + totalKiroRequests + qwenTotalRequests + codexTotalRequests,
           totalQuotaConsumed: antigravityTotalQuotaConsumed + totalKiroQuotaConsumed,
         });
       } catch (err) {

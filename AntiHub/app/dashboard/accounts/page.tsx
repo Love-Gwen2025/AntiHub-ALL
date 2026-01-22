@@ -1170,9 +1170,9 @@ export default function AccountsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="px-4 lg:px-6">
-          <div className="flex items-center justify-center min-h-screen">
+      <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden py-4 md:gap-6 md:py-6">
+        <div className="flex min-h-0 flex-1 flex-col px-4 lg:px-6">
+          <div className="flex min-h-0 flex-1 items-center justify-center">
             <MorphingSquare message="加载中..." />
           </div>
         </div>
@@ -1181,8 +1181,8 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden py-4 md:gap-6 md:py-6">
+      <div className="flex min-h-0 flex-1 flex-col px-4 lg:px-6">
         {/* 页面标题和操作 */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1268,21 +1268,21 @@ export default function AccountsPage() {
 
         {/* 反重力账号列表 */}
         {activeTab === 'antigravity' && (
-          <Card>
+          <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className="text-left">
               <CardTitle className="text-left">Antigravity账号</CardTitle>
               <CardDescription className="text-left">
                 共 {accounts.length} 个账号
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
               {accounts.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <p className="text-lg mb-2">暂无Antigravity账号</p>
                   <p className="text-sm">点击“添加账号”按钮添加您的第一个账号</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
                   <Table>
                       <TableHeader>
                         <TableRow>
@@ -1418,21 +1418,21 @@ export default function AccountsPage() {
 
         {/* Kiro账号列表 */}
         {activeTab === 'kiro' && (
-          <Card>
+          <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className="text-left">
               <CardTitle className="text-left">Kiro账号</CardTitle>
               <CardDescription className="text-left">
                 共 {kiroAccounts.length} 个账号
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
               {kiroAccounts.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <p className="text-lg mb-2">暂无Kiro账号</p>
                   <p className="text-sm">点击“添加账号”按钮添加您的第一个Kiro账号</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1521,21 +1521,21 @@ export default function AccountsPage() {
 
         {/* Qwen账号列表 */}
         {activeTab === 'qwen' && (
-          <Card>
+          <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className="text-left">
               <CardTitle className="text-left">Qwen账号</CardTitle>
               <CardDescription className="text-left">
                 共 {qwenAccounts.length} 个账号
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
               {qwenAccounts.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <p className="text-lg mb-2">暂无Qwen账号</p>
                   <p className="text-sm">点击“添加账号”按钮导入您的第一个Qwen账号</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1630,7 +1630,7 @@ export default function AccountsPage() {
 
         {/* Codex账号列表 */}
         {activeTab === 'codex' && (
-          <Card>
+          <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className="text-left">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1661,14 +1661,14 @@ export default function AccountsPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
               {codexAccounts.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <p className="text-lg mb-2">暂无Codex账号</p>
                   <p className="text-sm">点击“添加账号”按钮添加您的第一个Codex账号</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-6 px-6 md:mx-0 md:px-0">
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
