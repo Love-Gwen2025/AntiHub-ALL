@@ -23,6 +23,11 @@ PLUGIN_DB_NAME=$(strip_cr "${PLUGIN_DB_NAME:-antigravity}")
 PLUGIN_DB_USER=$(strip_cr "${PLUGIN_DB_USER:-antigravity}")
 PLUGIN_DB_PASSWORD=$(strip_cr "${PLUGIN_DB_PASSWORD:-please-change-me}")
 
+if [ "$PLUGIN_DB_USER" = "$POSTGRES_USER" ] && [ "$PLUGIN_DB_PASSWORD" != "$POSTGRES_PASSWORD" ]; then
+    echo "[db-init] 配置冲突：PLUGIN_DB_USER 与 POSTGRES_USER 相同，但 PLUGIN_DB_PASSWORD 与 POSTGRES_PASSWORD 不一致（同一用户不可能有两套密码）" >&2
+    exit 1
+fi
+
 export PGPASSWORD="$POSTGRES_PASSWORD"
 
 echo "[db-init] sync postgres/plugin users & db..."
@@ -40,12 +45,13 @@ SELECT CASE
         format('CREATE DATABASE %I OWNER %I', :'main_db', :'su_user')
 END \gexec
 
-SELECT CASE
-    WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'plugin_user') THEN
-        format('ALTER USER %I WITH PASSWORD %L', :'plugin_user', :'plugin_pass')
-    ELSE
-        format('CREATE USER %I WITH PASSWORD %L', :'plugin_user', :'plugin_pass')
-END \gexec
+SELECT format('CREATE USER %I WITH PASSWORD %L', :'plugin_user', :'plugin_pass')
+WHERE :'plugin_user' <> :'su_user'
+  AND NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'plugin_user') \gexec
+
+SELECT format('ALTER USER %I WITH PASSWORD %L', :'plugin_user', :'plugin_pass')
+WHERE :'plugin_user' <> :'su_user'
+  AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'plugin_user') \gexec
 
 SELECT CASE
     WHEN EXISTS (SELECT 1 FROM pg_database WHERE datname = :'plugin_db') THEN
