@@ -11,14 +11,23 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps_flexible import get_user_flexible_with_goog_api_key
-from app.api.deps import get_plugin_api_service
+from app.api.deps import get_db_session, get_plugin_api_service, get_redis
+from app.cache import RedisClient
 from app.models.user import User
+from app.services.gemini_cli_api_service import GeminiCLIAPIService
 from app.services.plugin_api_service import PluginAPIService
 from app.schemas.plugin_api import GenerateContentRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1beta", tags=["Gemini兼容API"])
+
+
+def get_gemini_cli_api_service(
+    db: AsyncSession = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis),
+) -> GeminiCLIAPIService:
+    return GeminiCLIAPIService(db, redis)
 
 
 @router.post(
@@ -30,11 +39,19 @@ async def generate_content(
     model: str,
     request: GenerateContentRequest,
     current_user: User = Depends(get_user_flexible_with_goog_api_key),
-    service: PluginAPIService = Depends(get_plugin_api_service)
+    service: PluginAPIService = Depends(get_plugin_api_service),
+    gemini_cli_service: GeminiCLIAPIService = Depends(get_gemini_cli_api_service),
 ):
     try:
         # 获取 config_type（通过 API key 认证时会设置）
         config_type = getattr(current_user, '_config_type', None)
+
+        if config_type == "gemini-cli":
+            return await gemini_cli_service.gemini_generate_content(
+                user_id=current_user.id,
+                model=model,
+                request_data=request.model_dump(),
+            )
         
         # 使用流式请求以支持SSE心跳保活
         async def generate():
@@ -88,11 +105,34 @@ async def stream_generate_content(
     request: GenerateContentRequest,
     alt: str = Query(default="sse", description="响应格式，默认为sse"),
     current_user: User = Depends(get_user_flexible_with_goog_api_key),
-    service: PluginAPIService = Depends(get_plugin_api_service)
+    service: PluginAPIService = Depends(get_plugin_api_service),
+    gemini_cli_service: GeminiCLIAPIService = Depends(get_gemini_cli_api_service),
 ):
     try:
         # 获取 config_type（通过 API key 认证时会设置）
         config_type = getattr(current_user, '_config_type', None)
+
+        if config_type == "gemini-cli":
+            if alt != "sse":
+                raise ValueError("GeminiCLI 目前仅支持 alt=sse 的流式响应")
+
+            async def generate():
+                async for chunk in gemini_cli_service.gemini_stream_generate_content(
+                    user_id=current_user.id,
+                    model=model,
+                    request_data=request.model_dump(),
+                ):
+                    yield chunk
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
         
         # 使用流式请求以支持SSE心跳保活
         async def generate():

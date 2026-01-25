@@ -20,6 +20,7 @@ from app.models.user import User
 from app.services.plugin_api_service import PluginAPIService
 from app.services.kiro_service import KiroService, UpstreamAPIError
 from app.services.codex_service import CodexService
+from app.services.gemini_cli_api_service import GeminiCLIAPIService
 from app.services.anthropic_adapter import AnthropicAdapter
 from app.services.usage_log_service import (
     UsageLogService,
@@ -81,6 +82,13 @@ def get_codex_service(
     return CodexService(db, redis)
 
 
+def get_gemini_cli_api_service(
+    db: AsyncSession = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis),
+) -> GeminiCLIAPIService:
+    return GeminiCLIAPIService(db, redis)
+
+
 @router.get(
     "/models",
     summary="获取模型列表",
@@ -92,6 +100,7 @@ async def list_models(
     antigravity_service: PluginAPIService = Depends(get_plugin_api_service),
     kiro_service: KiroService = Depends(get_kiro_service),
     codex_service: CodexService = Depends(get_codex_service),
+    gemini_cli_service: GeminiCLIAPIService = Depends(get_gemini_cli_api_service),
 ):
     """
     获取模型列表
@@ -110,14 +119,17 @@ async def list_models(
         # 如果是JWT token认证（无_config_type），检查请求头
         if config_type is None:
             api_type = request.headers.get("X-Api-Type")
-            if api_type in ["kiro", "antigravity", "qwen", "codex"]:
+            if api_type in ["kiro", "antigravity", "qwen", "codex", "gemini-cli"]:
                 config_type = api_type
         
         use_kiro = config_type == "kiro"
         use_codex = config_type == "codex"
+        use_gemini_cli = config_type == "gemini-cli"
         
         if use_codex:
             result = await codex_service.openai_list_models()
+        elif use_gemini_cli:
+            result = await gemini_cli_service.openai_list_models()
         elif use_kiro:
             # 检查 beta 权限（管理员放行）
             if current_user.beta != 1 and getattr(current_user, "trust_level", 0) < 3:
@@ -604,7 +616,8 @@ async def chat_completions(
     raw_request: Request,
     current_user: User = Depends(get_user_flexible),
     antigravity_service: PluginAPIService = Depends(get_plugin_api_service),
-    kiro_service: KiroService = Depends(get_kiro_service)
+    kiro_service: KiroService = Depends(get_kiro_service),
+    gemini_cli_service: GeminiCLIAPIService = Depends(get_gemini_cli_api_service),
 ):
     """
     聊天补全
@@ -629,12 +642,13 @@ async def chat_completions(
     config_type = getattr(current_user, "_config_type", None)
     if config_type is None:
         api_type = raw_request.headers.get("X-Api-Type")
-        if api_type in ["kiro", "antigravity", "qwen", "codex"]:
+        if api_type in ["kiro", "antigravity", "qwen", "codex", "gemini-cli"]:
             config_type = api_type
 
     effective_config_type = config_type or "antigravity"
     use_kiro = effective_config_type == "kiro"
     use_codex = effective_config_type == "codex"
+    use_gemini_cli = effective_config_type == "gemini-cli"
 
     try:
         if use_codex:
@@ -658,7 +672,14 @@ async def chat_completions(
 
             async def generate():
                 try:
-                    if use_kiro:
+                    if use_gemini_cli:
+                        async for chunk in gemini_cli_service.openai_chat_completions_stream(
+                            user_id=current_user.id,
+                            request_data=request.model_dump(),
+                        ):
+                            tracker.feed(chunk)
+                            yield chunk
+                    elif use_kiro:
                         async for chunk in kiro_service.chat_completions_stream(
                             user_id=current_user.id,
                             request_data=request.model_dump(),
@@ -714,6 +735,30 @@ async def chat_completions(
             )
 
         # 非流式请求
+        if use_gemini_cli:
+            result = await gemini_cli_service.openai_chat_completions(
+                user_id=current_user.id,
+                request_data=request.model_dump(),
+            )
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            in_tok, out_tok, total_tok = extract_openai_usage(result)
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=model_name,
+                config_type=effective_config_type,
+                stream=False,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                total_tokens=total_tok,
+                success=True,
+                status_code=200,
+                duration_ms=duration_ms,
+            )
+            return result
+
         if use_kiro:
             openai_stream = kiro_service.chat_completions_stream(
                 user_id=current_user.id,
