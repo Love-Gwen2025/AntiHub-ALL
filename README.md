@@ -37,7 +37,8 @@
 3. Kiro-Token: 已完全支持
 4. Kiro-AWS IMA: 已完全支持
 5. QwenCli: 已完成开发，待测试
-6. CodexCLI: 初步测试完成，等高强度测试
+6. CodexCLI: 已完全支持
+7. GeminiCLI： 已完全支持
 
 ## 你需要准备
 
