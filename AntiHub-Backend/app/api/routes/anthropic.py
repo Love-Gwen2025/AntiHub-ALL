@@ -8,6 +8,7 @@ import uuid
 import logging
 import json
 import os
+import tempfile
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["Anthropic兼容API"])
 
 # 错误dump文件路径
-ERROR_DUMP_FILE = "error_dumps.json"
+ERROR_DUMP_FILE = os.path.join(tempfile.gettempdir(), "error_dumps.json")
 
 
 def dump_error_to_file(

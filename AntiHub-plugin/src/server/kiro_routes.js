@@ -234,7 +234,7 @@ router.post('/api/kiro/oauth/callback', async (req, res) => {
       reset_date: usageLimitsData.reset_date || new Date().toISOString(),
       usage_limit: usageLimitsData.usage_limit || 0,
       // 免费试用信息
-      free_trial_status: usageLimitsData.free_trial_status || null,
+      free_trial_status: usageLimitsData.free_trial_status ?? false,
       free_trial_usage: usageLimitsData.free_trial_usage || null,
       free_trial_expiry: usageLimitsData.free_trial_expiry || null,
       free_trial_limit: usageLimitsData.free_trial_limit || 0,

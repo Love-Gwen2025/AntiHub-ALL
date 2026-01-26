@@ -5,6 +5,7 @@ FastAPI 应用主文件
 import logging
 import json
 import os
+import tempfile
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -203,7 +204,7 @@ def create_app() -> FastAPI:
         
         # Dump错误到文件
         try:
-            error_dump_file = "error_dumps.json"
+            error_dump_file = os.path.join(tempfile.gettempdir(), "error_dumps.json")
             error_record = {
                 "timestamp": datetime.now().isoformat(),
                 "endpoint": request.url.path,

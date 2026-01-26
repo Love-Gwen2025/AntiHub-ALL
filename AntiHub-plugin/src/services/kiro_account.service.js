@@ -81,6 +81,11 @@ class KiroAccountService {
       bonus_details = []
     } = accountData;
 
+    const normalizedFreeTrialStatus =
+      free_trial_status === true ||
+      free_trial_status === 1 ||
+      free_trial_status === 'true';
+
     // 验证必需字段
     if (!user_id || !auth_method || !refresh_token) {
       throw new Error('缺少必需字段: user_id, auth_method, refresh_token');
@@ -128,7 +133,7 @@ class KiroAccountService {
            RETURNING *`,
           [user_id, account_name, auth_method, refresh_token, access_token, expires_at,
            client_id, client_secret, profile_arn, machineid, region, is_shared, email,
-           subscription, current_usage, reset_date, usage_limit, free_trial_status,
+           subscription, current_usage, reset_date, usage_limit, normalizedFreeTrialStatus,
            free_trial_usage, free_trial_expiry, free_trial_limit, bonus_usage, bonus_limit,
            bonus_available, JSON.stringify(bonus_details), userid]
         );
@@ -148,7 +153,7 @@ class KiroAccountService {
            RETURNING *`,
           [user_id, account_name, auth_method, refresh_token, access_token, expires_at,
            client_id, client_secret, profile_arn, machineid, region, is_shared, email, userid,
-           subscription, current_usage, reset_date, usage_limit, free_trial_status,
+           subscription, current_usage, reset_date, usage_limit, normalizedFreeTrialStatus,
            free_trial_usage, free_trial_expiry, free_trial_limit, bonus_usage, bonus_limit,
            bonus_available, JSON.stringify(bonus_details)]
         );
