@@ -11,6 +11,7 @@ import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
 import time
+import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
@@ -73,6 +74,14 @@ def _responses_sse_error(
 
 
 LOCAL_IMAGE_MODEL_ID = "glm-image"
+LOCAL_IMAGE_MODEL_ALIASES: List[str] = [
+    "gemini-3-pro-image-preview",
+]
+LOCAL_IMAGE_MODEL_IDS: List[str] = [LOCAL_IMAGE_MODEL_ID, *LOCAL_IMAGE_MODEL_ALIASES]
+
+
+def _is_local_image_model(model: Any) -> bool:
+    return str(model or "").strip() in LOCAL_IMAGE_MODEL_IDS
 
 
 def _inject_local_models(payload: Any) -> Any:
@@ -86,23 +95,27 @@ def _inject_local_models(payload: Any) -> Any:
     if not isinstance(data, list):
         return payload
 
-    exists = False
-    for item in data:
-        if isinstance(item, dict) and str(item.get("id") or "").strip() == LOCAL_IMAGE_MODEL_ID:
-            exists = True
-            break
+    existing_ids = {
+        str(item.get("id") or "").strip()
+        for item in data
+        if isinstance(item, dict)
+    }
 
-    if not exists:
+    now_ts = int(time.time())
+    for model_id in LOCAL_IMAGE_MODEL_IDS:
+        if model_id in existing_ids:
+            continue
         data.append(
             {
-                "id": LOCAL_IMAGE_MODEL_ID,
+                "id": model_id,
                 "object": "model",
-                "created": int(time.time()),
+                "created": now_ts,
                 "owned_by": "antihub",
             }
         )
-        payload["data"] = data
-        payload.setdefault("object", "list")
+
+    payload["data"] = data
+    payload.setdefault("object", "list")
 
     return payload
 
@@ -126,17 +139,17 @@ def _openai_size_to_zai_image_config(size: Any) -> Tuple[str, str]:
     """
     raw = str(size or "").strip().lower()
     if "x" not in raw:
-        return "1:1", "1K"
+        return "16:9", "2K"
 
     try:
         w_s, h_s = raw.split("x", 1)
         w = int(w_s)
         h = int(h_s)
     except Exception:
-        return "1:1", "1K"
+        return "16:9", "2K"
 
     if w <= 0 or h <= 0:
-        return "1:1", "1K"
+        return "16:9", "2K"
 
     ratio_value = float(w) / float(h)
     ratio = min(ZAI_IMAGE_RATIO_OPTIONS.keys(), key=lambda k: abs(ZAI_IMAGE_RATIO_OPTIONS[k] - ratio_value))
@@ -144,6 +157,62 @@ def _openai_size_to_zai_image_config(size: Any) -> Tuple[str, str]:
     max_side = max(w, h)
     resolution = "2K" if max_side > 1024 else "1K"
     return ratio, resolution
+
+
+def _openai_quality_to_zai_image_resolution(quality: Any) -> Optional[str]:
+    q = str(quality or "").strip().lower()
+    if not q:
+        return None
+    if q in ("hd", "high", "high_quality", "high-quality", "2k"):
+        return "2K"
+    if q in ("standard", "low", "1k"):
+        return "1K"
+    return None
+
+
+def _extract_openai_chat_text_prompt(messages: Any) -> str:
+    if not isinstance(messages, list):
+        return ""
+
+    texts: list[str] = []
+    has_image = False
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+
+        content = msg.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                texts.append(content.strip())
+            continue
+
+        if isinstance(content, dict):
+            content = [content]
+
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+
+                ptype = str(part.get("type") or "").strip().lower()
+                if ptype and "image" in ptype:
+                    has_image = True
+
+                if any(k in part for k in ("image_url", "imageUrl", "inlineData", "input_image")):
+                    has_image = True
+
+                text = part.get("text")
+                if not isinstance(text, str):
+                    text = part.get("input_text")
+
+                if isinstance(text, str) and text.strip():
+                    texts.append(text.strip())
+
+    if has_image:
+        raise ValueError("glm-image 暂不支持图生图（image_url / input_image）")
+
+    return "\n".join(texts).strip()
 
 def get_kiro_service(
     db: AsyncSession = Depends(get_db_session),
@@ -451,11 +520,12 @@ async def image_generations(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="prompt is required")
 
     model_name = str(request_json.get("model") or "").strip() or LOCAL_IMAGE_MODEL_ID
-    if model_name != LOCAL_IMAGE_MODEL_ID:
-        await _record_usage(False, status.HTTP_400_BAD_REQUEST, f"Only model {LOCAL_IMAGE_MODEL_ID} is supported")
+    if not _is_local_image_model(model_name):
+        supported = ", ".join(LOCAL_IMAGE_MODEL_IDS)
+        await _record_usage(False, status.HTTP_400_BAD_REQUEST, f"Only model(s) {supported} are supported")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Only model {LOCAL_IMAGE_MODEL_ID} is supported",
+            detail=f"Only model(s) {supported} are supported",
         )
 
     response_format = str(request_json.get("response_format") or "url").strip() or "url"
@@ -475,8 +545,20 @@ async def image_generations(
         await _record_usage(False, status.HTTP_400_BAD_REQUEST, "n must be between 1 and 4")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="n must be between 1 and 4")
 
-    size = str(request_json.get("size") or "1024x1024").strip()
-    ratio, resolution = _openai_size_to_zai_image_config(size)
+    size_value = str(request_json.get("size") or "").strip()
+    quality_value = str(request_json.get("quality") or "").strip()
+
+    if not size_value and not quality_value:
+        ratio, resolution = "16:9", "2K"
+    else:
+        if size_value:
+            ratio, resolution = _openai_size_to_zai_image_config(size_value)
+        else:
+            ratio, resolution = "16:9", "2K"
+
+        quality_resolution = _openai_quality_to_zai_image_resolution(quality_value)
+        if quality_resolution:
+            resolution = quality_resolution
 
     try:
         account = await zai_image_service.select_active_account(current_user.id)
@@ -490,11 +572,9 @@ async def image_generations(
                 resolution=resolution,
                 rm_label_watermark=True,
             )
-            if response_format == "b64_json":
-                b64, _mime = await zai_image_service.fetch_image_base64(info["image_url"])
-                data_items.append({"b64_json": b64})
-            else:
-                data_items.append({"url": info["image_url"]})
+            b64, _mime = await zai_image_service.fetch_image_base64(info["image_url"])
+            # 兼容：部分客户端只接受 base64；同时把 url 追加在最后，方便调试/追溯。
+            data_items.append({"b64_json": b64, "url": info["image_url"]})
 
         await _record_usage(True, 200, None, quota_consumed=float(n))
         return {"created": int(time.time()), "data": data_items}
@@ -949,6 +1029,7 @@ async def chat_completions(
     antigravity_service: PluginAPIService = Depends(get_plugin_api_service),
     kiro_service: KiroService = Depends(get_kiro_service),
     gemini_cli_service: GeminiCLIAPIService = Depends(get_gemini_cli_api_service),
+    zai_image_service: ZaiImageService = Depends(get_zai_image_service),
 ):
     """
     聊天补全
@@ -968,6 +1049,186 @@ async def chat_completions(
     method = raw_request.method
     api_key_id = getattr(current_user, "_api_key_id", None)
     model_name = getattr(request, "model", None)
+
+    if _is_local_image_model(model_name):
+        request_data = request.model_dump()
+
+        try:
+            prompt = _extract_openai_chat_text_prompt(request_data.get("messages"))
+            if not prompt:
+                raise ValueError("prompt is required")
+
+            n_raw = request_data.get("n", 1)
+            try:
+                n = int(n_raw)
+            except Exception:
+                n = 1
+            if n < 1 or n > 4:
+                raise ValueError("n must be between 1 and 4")
+
+            response_format_raw = request_data.get("response_format")
+            image_response_format = "url"
+            if isinstance(response_format_raw, str) and response_format_raw.strip():
+                image_response_format = response_format_raw.strip()
+            if image_response_format not in ("url", "b64_json"):
+                raise ValueError("response_format must be url or b64_json")
+
+            size_value = str(request_data.get("size") or "").strip()
+            quality_value = str(request_data.get("quality") or "").strip()
+
+            if not size_value and not quality_value:
+                ratio, resolution = "16:9", "2K"
+            else:
+                if size_value:
+                    ratio, resolution = _openai_size_to_zai_image_config(size_value)
+                else:
+                    ratio, resolution = "16:9", "2K"
+
+                quality_resolution = _openai_quality_to_zai_image_resolution(quality_value)
+                if quality_resolution:
+                    resolution = quality_resolution
+
+            account = await zai_image_service.select_active_account(current_user.id)
+            outputs: list[str] = []
+
+            for _ in range(n):
+                info = await zai_image_service.generate_image(
+                    account=account,
+                    prompt=prompt,
+                    ratio=ratio,
+                    resolution=resolution,
+                    rm_label_watermark=True,
+                )
+
+                b64, _mime = await zai_image_service.fetch_image_base64(info["image_url"])
+                # 兼容：返回 base64，并把 url 放在末尾（同一条 content 内换行分隔）。
+                outputs.append(f"{b64}\n{info['image_url']}")
+
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=LOCAL_IMAGE_MODEL_ID,
+                config_type="zai-image",
+                stream=bool(request.stream),
+                quota_consumed=float(n),
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                success=True,
+                status_code=200,
+                duration_ms=duration_ms,
+            )
+
+            created_ts = int(time.time())
+            completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+            response_model = str(model_name or LOCAL_IMAGE_MODEL_ID)
+
+            if request.stream:
+
+                async def generate():
+                    for idx, out in enumerate(outputs):
+                        chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": response_model,
+                            "choices": [
+                                {
+                                    "index": idx,
+                                    "delta": {"role": "assistant", "content": out},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+                        done_chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": response_model,
+                            "choices": [
+                                {
+                                    "index": idx,
+                                    "delta": {},
+                                    "finish_reason": "stop",
+                                }
+                            ],
+                        }
+                        yield f"data: {json.dumps(done_chunk, ensure_ascii=False)}\n\n"
+
+                    yield "data: [DONE]\n\n"
+
+                return StreamingResponse(
+                    generate(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+
+            choices = [
+                {
+                    "index": idx,
+                    "message": {"role": "assistant", "content": out},
+                    "finish_reason": "stop",
+                }
+                for idx, out in enumerate(outputs)
+            ]
+
+            return {
+                "id": completion_id,
+                "object": "chat.completion",
+                "created": created_ts,
+                "model": response_model,
+                "choices": choices,
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            }
+        except ValueError as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=LOCAL_IMAGE_MODEL_ID,
+                config_type="zai-image",
+                stream=bool(request.stream),
+                quota_consumed=0.0,
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                success=False,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=LOCAL_IMAGE_MODEL_ID,
+                config_type="zai-image",
+                stream=bool(request.stream),
+                quota_consumed=0.0,
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                success=False,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     # 判断使用哪个服务
     config_type = getattr(current_user, "_config_type", None)

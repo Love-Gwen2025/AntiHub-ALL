@@ -148,7 +148,7 @@ async def generate_content(
     effective_config_type = config_type or "antigravity"
 
     try:
-        if model == "glm-image":
+        if model in ("glm-image", "gemini-3-pro-image-preview"):
             async def generate():
                 success = True
                 status_code = 200
@@ -182,7 +182,10 @@ async def generate_content(
                             {
                                 "content": {
                                     "role": "model",
-                                    "parts": [{"inlineData": {"mimeType": mime, "data": b64}}],
+                                    "parts": [
+                                        {"inlineData": {"mimeType": mime, "data": b64}},
+                                        {"text": info["image_url"]},
+                                    ],
                                 },
                                 "finishReason": "STOP",
                             }

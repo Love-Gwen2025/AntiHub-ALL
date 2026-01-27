@@ -25,8 +25,8 @@ from app.utils.encryption import decrypt_api_key as decrypt_secret
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_RATIO = "1:1"
-DEFAULT_RESOLUTION = "1K"
+DEFAULT_RATIO = "16:9"
+DEFAULT_RESOLUTION = "2K"
 
 ALLOWED_RATIOS = {
     "1:1",
@@ -228,4 +228,3 @@ class ZaiImageService:
     async def fetch_image_base64(self, url: str) -> Tuple[str, str]:
         content, mime = await self.fetch_image_bytes(url)
         return base64.b64encode(content).decode("ascii"), mime
-
