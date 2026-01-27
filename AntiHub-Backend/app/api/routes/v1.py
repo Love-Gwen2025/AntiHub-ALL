@@ -80,9 +80,19 @@ LOCAL_IMAGE_MODEL_ALIASES: List[str] = [
 ]
 LOCAL_IMAGE_MODEL_IDS: List[str] = [LOCAL_IMAGE_MODEL_ID, *LOCAL_IMAGE_MODEL_ALIASES]
 
+LOCAL_TTS_MODEL_ID = "glm-tts"
+LOCAL_TTS_MODEL_ALIASES: List[str] = [
+    "zai-tts",
+]
+LOCAL_TTS_MODEL_IDS: List[str] = [LOCAL_TTS_MODEL_ID, *LOCAL_TTS_MODEL_ALIASES]
+
 
 def _is_local_image_model(model: Any) -> bool:
     return str(model or "").strip() in LOCAL_IMAGE_MODEL_IDS
+
+
+def _is_local_tts_model(model: Any) -> bool:
+    return str(model or "").strip() in LOCAL_TTS_MODEL_IDS
 
 
 def _inject_local_models(payload: Any) -> Any:
@@ -103,7 +113,7 @@ def _inject_local_models(payload: Any) -> Any:
     }
 
     now_ts = int(time.time())
-    for model_id in LOCAL_IMAGE_MODEL_IDS:
+    for model_id in [*LOCAL_IMAGE_MODEL_IDS, *LOCAL_TTS_MODEL_IDS]:
         if model_id in existing_ids:
             continue
         data.append(
@@ -286,7 +296,7 @@ async def list_models(
         use_codex = config_type == "codex"
         use_gemini_cli = config_type == "gemini-cli"
         
-        if config_type == "zai-image":
+        if config_type in ("zai-image", "zai-tts"):
             result = {"object": "list", "data": []}
         elif use_codex:
             result = await codex_service.openai_list_models()
@@ -369,7 +379,7 @@ async def audio_speech(
     speed = request_json.get("speed", 1.0)
     volume = request_json.get("volume", 1)
     stream = bool(request_json.get("stream"))
-    model_name = str(request_json.get("model") or "").strip() or "zai-tts"
+    model_name = str(request_json.get("model") or "").strip() or LOCAL_TTS_MODEL_ID
 
     async def _record_usage(
         success: bool,
