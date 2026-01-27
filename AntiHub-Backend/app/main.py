@@ -5,6 +5,7 @@ FastAPI 应用主文件
 import logging
 import json
 import os
+import tempfile
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -28,9 +29,12 @@ from app.api.routes import (
     kiro_aws_idc_router,
     qwen_router,
     anthropic_router,
+    anthropic_cc_router,
     gemini_router,
     codex_router,
     gemini_cli_router,
+    zai_tts_router,
+    zai_image_router,
 )
 
 # 配置日志
@@ -98,6 +102,16 @@ async def lifespan(app: FastAPI):
             exc_info=True,
         )
         raise
+
+    # 启动时清理 TTS 临时文件
+    try:
+        from app.services.zai_tts_service import ZaiTTSService
+
+        session_maker = get_session_maker()
+        async with session_maker() as session:
+            ZaiTTSService(session).cleanup_storage_on_startup()
+    except Exception as e:
+        logger.warning("清理 TTS 临时文件失败: %s", str(e))
     
     logger.info("🚀 应用启动完成")
      
@@ -172,8 +186,11 @@ def create_app() -> FastAPI:
     app.include_router(qwen_router)  # Qwen账号管理API
     app.include_router(codex_router)  # Codex账号管理API（本地落库）
     app.include_router(gemini_cli_router)  # GeminiCLI账号管理API（本地落库）
+    app.include_router(zai_tts_router)  # ZAI TTS账号管理API
+    app.include_router(zai_image_router)  # ZAI Image账号管理API
     app.include_router(v1_router)  # OpenAI兼容API，支持Antigravity和Kiro配置
     app.include_router(anthropic_router)  # Anthropic兼容API (/v1/messages)
+    app.include_router(anthropic_cc_router)  # Claude Code兼容API (/cc/v1/messages)
     app.include_router(gemini_router)  # Gemini兼容API (/v1beta/models/{model}:generateContent)
     
     # ==================== 异常处理器 ====================
@@ -203,7 +220,7 @@ def create_app() -> FastAPI:
         
         # Dump错误到文件
         try:
-            error_dump_file = "error_dumps.json"
+            error_dump_file = os.path.join(tempfile.gettempdir(), "error_dumps.json")
             error_record = {
                 "timestamp": datetime.now().isoformat(),
                 "endpoint": request.url.path,

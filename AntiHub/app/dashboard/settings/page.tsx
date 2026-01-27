@@ -32,11 +32,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { IconCopy, IconKey, IconTrash, IconEye, IconEyeOff, IconSettings, IconPlus, IconInfoCircle, IconAlertTriangle } from '@tabler/icons-react';
+import { IconCopy, IconKey, IconTrash, IconEye, IconEyeOff, IconSettings, IconPlus, IconInfoCircle, IconAlertTriangle, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { MorphingSquare } from '@/components/ui/morphing-square';
 import { cn } from '@/lib/utils';
 import Toaster, { ToasterRef } from '@/components/ui/toast';
 import { getPublicApiBaseUrl } from '@/lib/apiBase';
+
+const CONFIG_TYPE_PAGE_SIZE = 3;
+const CONFIG_TYPE_ORDER = [
+  'antigravity',
+  'kiro',
+  'qwen',
+  'zai-tts',
+  'zai-image',
+  'codex',
+  'gemini-cli',
+] as const;
 
 export default function SettingsPage() {
   const toasterRef = useRef<ToasterRef>(null);
@@ -48,7 +59,8 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [deletingKeyId, setDeletingKeyId] = useState<number | null>(null);
-  const [selectedConfigType, setSelectedConfigType] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli'>('antigravity');
+  const [selectedConfigType, setSelectedConfigType] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image'>('antigravity');
+  const [configTypePage, setConfigTypePage] = useState(0);
   const [keyName, setKeyName] = useState('');
   const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
 
@@ -60,6 +72,12 @@ export default function SettingsPage() {
   const [newSubscription, setNewSubscription] = useState('');
 
   const [apiEndpoint, setApiEndpoint] = useState(() => getPublicApiBaseUrl());
+
+  const configTypeTotalPages = Math.ceil(CONFIG_TYPE_ORDER.length / CONFIG_TYPE_PAGE_SIZE);
+  const visibleConfigTypes = CONFIG_TYPE_ORDER.slice(
+    configTypePage * CONFIG_TYPE_PAGE_SIZE,
+    (configTypePage + 1) * CONFIG_TYPE_PAGE_SIZE
+  );
 
   // CodexCLI 兜底服务（当 Codex 账号全部冻结/不可用时，转发到自定义 /responses 上游）
   const [codexFallbackBaseUrl, setCodexFallbackBaseUrl] = useState('');
@@ -75,6 +93,12 @@ export default function SettingsPage() {
     if (/^https?:\/\//i.test(base)) return;
     setApiEndpoint(`${window.location.origin}${base}`);
   }, []);
+
+  useEffect(() => {
+    if (!isCreateDialogOpen) return;
+    const index = CONFIG_TYPE_ORDER.indexOf(selectedConfigType);
+    setConfigTypePage(index >= 0 ? Math.floor(index / CONFIG_TYPE_PAGE_SIZE) : 0);
+  }, [isCreateDialogOpen, selectedConfigType]);
 
   const loadAPIKeys = async () => {
     try {
@@ -497,6 +521,10 @@ export default function SettingsPage() {
                               <Badge variant="outline">Codex</Badge>
                             ) : key.config_type === 'gemini-cli' ? (
                               <Badge variant="outline">GeminiCLI</Badge>
+                            ) : key.config_type === 'zai-tts' ? (
+                              <Badge variant="outline">ZAI TTS</Badge>
+                            ) : key.config_type === 'zai-image' ? (
+                              <Badge variant="outline">ZAI Image</Badge>
                             ) : (
                               <Badge variant="secondary">Antigravity</Badge>
                             )}
@@ -805,8 +833,41 @@ export default function SettingsPage() {
             <div className="space-y-3">
               <Label>类型</Label>
 
+              {configTypeTotalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    第 {configTypePage + 1} / {configTypeTotalPages} 页
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setConfigTypePage((prev) => Math.max(0, prev - 1))}
+                      disabled={configTypePage === 0}
+                      aria-label="上一页"
+                    >
+                      <IconChevronLeft className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() =>
+                        setConfigTypePage((prev) => Math.min(configTypeTotalPages - 1, prev + 1))
+                      }
+                      disabled={configTypePage >= configTypeTotalPages - 1}
+                      aria-label="下一页"
+                    >
+                      <IconChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Antigravity */}
               <label
+                hidden={!visibleConfigTypes.includes('antigravity')}
                 className={cn(
                   "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
                   selectedConfigType === 'antigravity' ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
@@ -833,6 +894,7 @@ export default function SettingsPage() {
 
               {/* Kiro */}
               <label
+                hidden={!visibleConfigTypes.includes('kiro')}
                 className={cn(
                   "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
                   selectedConfigType === 'kiro'
@@ -860,6 +922,7 @@ export default function SettingsPage() {
 
               {/* Qwen */}
               <label
+                hidden={!visibleConfigTypes.includes('qwen')}
                 className={cn(
                   "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
                   selectedConfigType === 'qwen'
@@ -885,8 +948,65 @@ export default function SettingsPage() {
                 </div>
               </label>
 
+              {/* ZAI TTS */}
+              <label
+                hidden={!visibleConfigTypes.includes('zai-tts')}
+                className={cn(
+                  "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
+                  selectedConfigType === 'zai-tts'
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="config_type"
+                  value="zai-tts"
+                  checked={selectedConfigType === 'zai-tts'}
+                  onChange={() => setSelectedConfigType('zai-tts')}
+                  className="w-4 h-4 mt-1"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">ZAI TTS</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    用于调用 /v1/audio/speech（需先在“账户管理”添加 ZAI TTS 账号）
+                  </p>
+                </div>
+              </label>
+
+              {/* ZAI Image */}
+              <label
+                hidden={!visibleConfigTypes.includes('zai-image')}
+                className={cn(
+                  "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
+                  selectedConfigType === 'zai-image'
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="config_type"
+                  value="zai-image"
+                  checked={selectedConfigType === 'zai-image'}
+                  onChange={() => setSelectedConfigType('zai-image')}
+                  className="w-4 h-4 mt-1"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">ZAI Image</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    用于调用 /v1/images/generations（model=glm-image，需先在“账户管理”添加 ZAI Image 账号）
+                  </p>
+                </div>
+              </label>
+
               {/* Codex */}
               <label
+                hidden={!visibleConfigTypes.includes('codex')}
                 className={cn(
                   "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
                   selectedConfigType === 'codex'
@@ -914,6 +1034,7 @@ export default function SettingsPage() {
 
               {/* GeminiCLI */}
               <label
+                hidden={!visibleConfigTypes.includes('gemini-cli')}
                 className={cn(
                   "flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors",
                   selectedConfigType === 'gemini-cli'

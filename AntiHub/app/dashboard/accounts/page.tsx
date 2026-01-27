@@ -36,8 +36,16 @@ import {
   getGeminiCLIAccountQuota,
   deleteGeminiCLIAccount,
   updateGeminiCLIAccountStatus,
-  updateGeminiCLIAccountName,
-  updateGeminiCLIAccountProject,
+  getZaiTTSAccounts,
+  updateZaiTTSAccountStatus,
+  updateZaiTTSAccountName,
+  updateZaiTTSAccountCredentials,
+  deleteZaiTTSAccount,
+  getZaiImageAccounts,
+  updateZaiImageAccountStatus,
+  updateZaiImageAccountName,
+  updateZaiImageAccountCredentials,
+  deleteZaiImageAccount,
   type CodexWhamUsageData,
   type Account,
   type AccountProjects,
@@ -47,6 +55,8 @@ import {
   type CodexAccount,
   type GeminiCLIAccount,
   type GeminiCLIQuotaData,
+  type ZaiTTSAccount,
+  type ZaiImageAccount,
 } from '@/lib/api';
 import { AddAccountDrawer } from '@/components/add-account-drawer';
 import { Button } from '@/components/ui/button';
@@ -107,11 +117,13 @@ export default function AccountsPage() {
   const [codexAccounts, setCodexAccounts] = useState<CodexAccount[]>([]);
   const [codexRefreshErrorById, setCodexRefreshErrorById] = useState<Record<number, string>>({});
   const [geminiCliAccounts, setGeminiCliAccounts] = useState<GeminiCLIAccount[]>([]);
+  const [zaiTtsAccounts, setZaiTtsAccounts] = useState<ZaiTTSAccount[]>([]);
+  const [zaiImageAccounts, setZaiImageAccounts] = useState<ZaiImageAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingCookieId, setRefreshingCookieId] = useState<string | null>(null);
   const [refreshingCodexAccountId, setRefreshingCodexAccountId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini'>('antigravity');
+  const [activeTab, setActiveTab] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini' | 'zai-tts' | 'zai-image'>('antigravity');
 
   // 添加账号 Drawer 状态
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
@@ -155,12 +167,6 @@ export default function AccountsPage() {
   const [newCodexAccountName, setNewCodexAccountName] = useState('');
   const [isRenamingCodex, setIsRenamingCodex] = useState(false);
 
-  // 重命名 GeminiCLI 账号 Dialog 状态
-  const [isGeminiCliRenameDialogOpen, setIsGeminiCliRenameDialogOpen] = useState(false);
-  const [renamingGeminiCliAccount, setRenamingGeminiCliAccount] = useState<GeminiCLIAccount | null>(null);
-  const [newGeminiCliAccountName, setNewGeminiCliAccountName] = useState('');
-  const [isRenamingGeminiCli, setIsRenamingGeminiCli] = useState(false);
-
   // Antigravity 账号详情 Dialog 状态
   const [isAntigravityDetailDialogOpen, setIsAntigravityDetailDialogOpen] = useState(false);
   const [antigravityDetail, setAntigravityDetail] = useState<AntigravityAccountDetail | null>(null);
@@ -186,6 +192,22 @@ export default function AccountsPage() {
   const [geminiCliQuotaData, setGeminiCliQuotaData] = useState<GeminiCLIQuotaData | null>(null);
   const [isLoadingGeminiCliQuota, setIsLoadingGeminiCliQuota] = useState(false);
 
+  // ZAI TTS 编辑 Dialog
+  const [isZaiTtsEditDialogOpen, setIsZaiTtsEditDialogOpen] = useState(false);
+  const [editingZaiTtsAccount, setEditingZaiTtsAccount] = useState<ZaiTTSAccount | null>(null);
+  const [zaiTtsEditAccountName, setZaiTtsEditAccountName] = useState('');
+  const [zaiTtsEditUserId, setZaiTtsEditUserId] = useState('');
+  const [zaiTtsEditToken, setZaiTtsEditToken] = useState('');
+  const [zaiTtsEditVoiceId, setZaiTtsEditVoiceId] = useState('system_001');
+  const [isUpdatingZaiTts, setIsUpdatingZaiTts] = useState(false);
+
+  // ZAI Image 编辑 Dialog
+  const [isZaiImageEditDialogOpen, setIsZaiImageEditDialogOpen] = useState(false);
+  const [editingZaiImageAccount, setEditingZaiImageAccount] = useState<ZaiImageAccount | null>(null);
+  const [zaiImageEditAccountName, setZaiImageEditAccountName] = useState('');
+  const [zaiImageEditToken, setZaiImageEditToken] = useState('');
+  const [isUpdatingZaiImage, setIsUpdatingZaiImage] = useState(false);
+
   // Codex 限额窗口（wham/usage）Dialog 状态
   const [isCodexWhamDialogOpen, setIsCodexWhamDialogOpen] = useState(false);
   const [codexWhamAccount, setCodexWhamAccount] = useState<CodexAccount | null>(null);
@@ -205,6 +227,88 @@ export default function AccountsPage() {
     onConfirm: () => void;
   } | null>(null);
   const [isConfirmLoading, setIsConfirmLoading] = useState(false);
+
+  const formatGeminiCliResetTime = (value: string | null | undefined) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+      .format(date)
+      .replace(/\//g, '-');
+  };
+
+  // Gemini 模型分层分组
+  type GeminiTier = 'Pro' | 'Flash' | 'Other';
+  interface GeminiTierGroup {
+    tier: GeminiTier;
+    remaining_fraction: number | null;
+    reset_time: string | null;
+  }
+
+  const getGeminiModelTier = (modelId: string): GeminiTier => {
+    const lower = modelId.toLowerCase();
+    // Flash 层（包含 Flash Lite）
+    if (lower.includes('flash')) {
+      return 'Flash';
+    }
+    // Pro 层
+    if (lower.includes('pro')) {
+      return 'Pro';
+    }
+    return 'Other';
+  };
+
+  const groupGeminiQuotaByTier = (buckets: GeminiCLIQuotaData['buckets']): GeminiTierGroup[] => {
+    const tierMap = new Map<GeminiTier, { fractions: number[]; resetTimes: string[] }>();
+    const tierOrder: GeminiTier[] = ['Pro', 'Flash', 'Other'];
+
+    for (const bucket of buckets) {
+      const tier = getGeminiModelTier(bucket.model_id);
+      if (!tierMap.has(tier)) {
+        tierMap.set(tier, { fractions: [], resetTimes: [] });
+      }
+      const group = tierMap.get(tier)!;
+      if (bucket.remaining_fraction !== null && bucket.remaining_fraction !== undefined) {
+        group.fractions.push(bucket.remaining_fraction);
+      }
+      if (bucket.reset_time) {
+        group.resetTimes.push(bucket.reset_time);
+      }
+    }
+
+    const result: GeminiTierGroup[] = [];
+    for (const tier of tierOrder) {
+      const group = tierMap.get(tier);
+      if (!group || group.fractions.length === 0) continue;
+
+      // 取最小剩余比例（最保守估计）
+      const minFraction = group.fractions.length > 0
+        ? Math.min(...group.fractions)
+        : null;
+
+      // 取最早的重置时间
+      const earliestReset = group.resetTimes.length > 0
+        ? group.resetTimes.sort()[0]
+        : null;
+
+      result.push({
+        tier,
+        remaining_fraction: minFraction,
+        reset_time: earliestReset,
+      });
+    }
+
+    return result;
+  };
 
   const loadAccounts = async () => {
     try {
@@ -269,6 +373,24 @@ export default function AccountsPage() {
         console.log('未加载GeminiCLI账号');
         setGeminiCliAccounts([]);
       }
+
+      // 加载 ZAI TTS 账号
+      try {
+        const zaiTtsData = await getZaiTTSAccounts();
+        setZaiTtsAccounts(zaiTtsData);
+      } catch (err) {
+        console.log('未加载ZAI TTS账号');
+        setZaiTtsAccounts([]);
+      }
+
+      // 加载 ZAI Image 账号
+      try {
+        const zaiImageData = await getZaiImageAccounts();
+        setZaiImageAccounts(zaiImageData);
+      } catch (err) {
+        console.log('未加载ZAI Image账号');
+        setZaiImageAccounts([]);
+      }
     } catch (err) {
       toasterRef.current?.show({
         title: '加载失败',
@@ -280,6 +402,8 @@ export default function AccountsPage() {
       setKiroAccounts([]);
       setQwenAccounts([]);
       setCodexAccounts([]);
+      setZaiTtsAccounts([]);
+      setZaiImageAccounts([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -832,6 +956,233 @@ export default function AccountsPage() {
     }
   };
 
+  // ZAI TTS 账号处理函数
+  const handleToggleZaiTtsStatus = async (account: ZaiTTSAccount) => {
+    try {
+      const newStatus = account.status === 1 ? 0 : 1;
+      const updated = await updateZaiTTSAccountStatus(account.account_id, newStatus);
+      setZaiTtsAccounts(
+        zaiTtsAccounts.map((a) => (a.account_id === account.account_id ? { ...a, ...updated } : a))
+      );
+      toasterRef.current?.show({
+        title: '状态已更新',
+        message: `账号已${newStatus === 1 ? '启用' : '禁用'}`,
+        variant: 'success',
+        position: 'top-right',
+      });
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '更新失败',
+        message: err instanceof Error ? err.message : '更新状态失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    }
+  };
+
+  const handleEditZaiTtsAccount = (account: ZaiTTSAccount) => {
+    setEditingZaiTtsAccount(account);
+    setZaiTtsEditAccountName(account.account_name || '');
+    setZaiTtsEditUserId(account.zai_user_id || '');
+    setZaiTtsEditToken('');
+    setZaiTtsEditVoiceId(account.voice_id || 'system_001');
+    setIsZaiTtsEditDialogOpen(true);
+  };
+
+  const handleSubmitZaiTtsEdit = async () => {
+    if (!editingZaiTtsAccount) return;
+
+    const accountName = zaiTtsEditAccountName.trim();
+    const userId = zaiTtsEditUserId.trim();
+    const voiceId = zaiTtsEditVoiceId.trim();
+    const token = zaiTtsEditToken.trim();
+
+    if (!accountName || !userId || !voiceId) {
+      toasterRef.current?.show({
+        title: '输入错误',
+        message: '账号名称、ZAI_USERID、音色ID 不能为空',
+        variant: 'warning',
+        position: 'top-right',
+      });
+      return;
+    }
+
+    setIsUpdatingZaiTts(true);
+    try {
+      let updated = editingZaiTtsAccount;
+      if (accountName !== editingZaiTtsAccount.account_name) {
+        updated = await updateZaiTTSAccountName(editingZaiTtsAccount.account_id, accountName);
+      }
+
+      const credentialPayload: { zai_user_id: string; voice_id: string; token?: string } = {
+        zai_user_id: userId,
+        voice_id: voiceId,
+      };
+      if (token) credentialPayload.token = token;
+      updated = await updateZaiTTSAccountCredentials(editingZaiTtsAccount.account_id, credentialPayload);
+
+      setZaiTtsAccounts(
+        zaiTtsAccounts.map((a) => (a.account_id === editingZaiTtsAccount.account_id ? { ...a, ...updated } : a))
+      );
+
+      setIsZaiTtsEditDialogOpen(false);
+      toasterRef.current?.show({
+        title: '更新成功',
+        message: 'ZAI TTS 账号已更新',
+        variant: 'success',
+        position: 'top-right',
+      });
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '更新失败',
+        message: err instanceof Error ? err.message : '更新账号失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    } finally {
+      setIsUpdatingZaiTts(false);
+    }
+  };
+
+  const handleDeleteZaiTtsAccount = (accountId: number) => {
+    showConfirmDialog({
+      title: '删除账号',
+      description: '确定要删除这个 ZAI TTS 账号吗？此操作无法撤销。',
+      confirmText: '删除',
+      cancelText: '取消',
+      variant: 'destructive',
+      onConfirm: async () => {
+        try {
+          await deleteZaiTTSAccount(accountId);
+          setZaiTtsAccounts(zaiTtsAccounts.filter((a) => a.account_id !== accountId));
+          toasterRef.current?.show({
+            title: '删除成功',
+            message: 'ZAI TTS 账号已删除',
+            variant: 'success',
+            position: 'top-right',
+          });
+        } catch (err) {
+          toasterRef.current?.show({
+            title: '删除失败',
+            message: err instanceof Error ? err.message : '删除失败',
+            variant: 'error',
+            position: 'top-right',
+          });
+        }
+      },
+    });
+  };
+
+  // ZAI Image 账号处理函数
+  const handleToggleZaiImageStatus = async (account: ZaiImageAccount) => {
+    try {
+      const newStatus = account.status === 1 ? 0 : 1;
+      const updated = await updateZaiImageAccountStatus(account.account_id, newStatus);
+      setZaiImageAccounts(
+        zaiImageAccounts.map((a) => (a.account_id === account.account_id ? { ...a, ...updated } : a))
+      );
+      toasterRef.current?.show({
+        title: '状态已更新',
+        message: `账号已${newStatus === 1 ? '启用' : '禁用'}`,
+        variant: 'success',
+        position: 'top-right',
+      });
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '更新失败',
+        message: err instanceof Error ? err.message : '更新状态失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    }
+  };
+
+  const handleEditZaiImageAccount = (account: ZaiImageAccount) => {
+    setEditingZaiImageAccount(account);
+    setZaiImageEditAccountName(account.account_name || '');
+    setZaiImageEditToken('');
+    setIsZaiImageEditDialogOpen(true);
+  };
+
+  const handleSubmitZaiImageEdit = async () => {
+    if (!editingZaiImageAccount) return;
+
+    const accountName = zaiImageEditAccountName.trim();
+    const token = zaiImageEditToken.trim();
+
+    if (!accountName) {
+      toasterRef.current?.show({
+        title: '输入错误',
+        message: '账号名称不能为空',
+        variant: 'warning',
+        position: 'top-right',
+      });
+      return;
+    }
+
+    setIsUpdatingZaiImage(true);
+    try {
+      let updated = editingZaiImageAccount;
+      if (accountName !== editingZaiImageAccount.account_name) {
+        updated = await updateZaiImageAccountName(editingZaiImageAccount.account_id, accountName);
+      }
+
+      if (token) {
+        updated = await updateZaiImageAccountCredentials(editingZaiImageAccount.account_id, { token });
+      }
+
+      setZaiImageAccounts(
+        zaiImageAccounts.map((a) => (a.account_id === editingZaiImageAccount.account_id ? { ...a, ...updated } : a))
+      );
+
+      setIsZaiImageEditDialogOpen(false);
+      toasterRef.current?.show({
+        title: '更新成功',
+        message: 'ZAI Image 账号已更新',
+        variant: 'success',
+        position: 'top-right',
+      });
+    } catch (err) {
+      toasterRef.current?.show({
+        title: '更新失败',
+        message: err instanceof Error ? err.message : '更新账号失败',
+        variant: 'error',
+        position: 'top-right',
+      });
+    } finally {
+      setIsUpdatingZaiImage(false);
+    }
+  };
+
+  const handleDeleteZaiImageAccount = (accountId: number) => {
+    showConfirmDialog({
+      title: '删除账号',
+      description: '确定要删除这个 ZAI Image 账号吗？此操作无法撤销。',
+      confirmText: '删除',
+      cancelText: '取消',
+      variant: 'destructive',
+      onConfirm: async () => {
+        try {
+          await deleteZaiImageAccount(accountId);
+          setZaiImageAccounts(zaiImageAccounts.filter((a) => a.account_id !== accountId));
+          toasterRef.current?.show({
+            title: '删除成功',
+            message: 'ZAI Image 账号已删除',
+            variant: 'success',
+            position: 'top-right',
+          });
+        } catch (err) {
+          toasterRef.current?.show({
+            title: '删除失败',
+            message: err instanceof Error ? err.message : '删除失败',
+            variant: 'error',
+            position: 'top-right',
+          });
+        }
+      },
+    });
+  };
+
   const handleRenameKiro = (account: KiroAccount) => {
     setRenamingAccount(account);
     setNewAccountName(account.account_name || account.email || '');
@@ -848,12 +1199,6 @@ export default function AccountsPage() {
     setRenamingCodexAccount(account);
     setNewCodexAccountName(account.account_name || account.email || '');
     setIsCodexRenameDialogOpen(true);
-  };
-
-  const handleRenameGeminiCLI = (account: GeminiCLIAccount) => {
-    setRenamingGeminiCliAccount(account);
-    setNewGeminiCliAccountName(account.account_name || account.email || '');
-    setIsGeminiCliRenameDialogOpen(true);
   };
 
   const handleRenameAntigravity = (account: Account) => {
@@ -982,52 +1327,6 @@ export default function AccountsPage() {
       });
     } finally {
       setIsRenamingCodex(false);
-    }
-  };
-
-  const handleSubmitGeminiCliRename = async () => {
-    if (!renamingGeminiCliAccount) return;
-
-    if (!newGeminiCliAccountName.trim()) {
-      toasterRef.current?.show({
-        title: '输入错误',
-        message: '账号名称不能为空',
-        variant: 'warning',
-        position: 'top-right',
-      });
-      return;
-    }
-
-    setIsRenamingGeminiCli(true);
-    try {
-      const updated = await updateGeminiCLIAccountName(
-        renamingGeminiCliAccount.account_id,
-        newGeminiCliAccountName.trim()
-      );
-      setGeminiCliAccounts(
-        geminiCliAccounts.map((a) =>
-          a.account_id === renamingGeminiCliAccount.account_id ? { ...a, ...updated } : a
-        )
-      );
-      setDetailGeminiCliAccount((prev) =>
-        prev && prev.account_id === renamingGeminiCliAccount.account_id ? { ...prev, ...updated } : prev
-      );
-      setIsGeminiCliRenameDialogOpen(false);
-      toasterRef.current?.show({
-        title: '重命名成功',
-        message: '账号名称已更新',
-        variant: 'success',
-        position: 'top-right',
-      });
-    } catch (err) {
-      toasterRef.current?.show({
-        title: '重命名失败',
-        message: err instanceof Error ? err.message : '更新账号名称失败',
-        variant: 'error',
-        position: 'top-right',
-      });
-    } finally {
-      setIsRenamingGeminiCli(false);
     }
   };
 
@@ -1369,7 +1668,7 @@ export default function AccountsPage() {
             <div></div>
             <div className="flex flex-wrap items-center gap-2">
               {/* 账号配置切换下拉菜单 */}
-              <Select value={activeTab} onValueChange={(value: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini') => setActiveTab(value)}>
+              <Select value={activeTab} onValueChange={(value: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini' | 'zai-tts' | 'zai-image') => setActiveTab(value)}>
                 <SelectTrigger className="w-[140px] sm:w-[160px] h-9">
                   <SelectValue>
                     {activeTab === 'antigravity' ? (
@@ -1387,6 +1686,16 @@ export default function AccountsPage() {
                       <span className="flex items-center gap-2">
                         <Qwen className="size-4" />
                         Qwen
+                      </span>
+                    ) : activeTab === 'zai-tts' ? (
+                      <span className="flex items-center gap-2">
+                        <OpenAI className="size-4" />
+                        ZAI TTS
+                      </span>
+                    ) : activeTab === 'zai-image' ? (
+                      <span className="flex items-center gap-2">
+                        <OpenAI className="size-4" />
+                        ZAI Image
                       </span>
                     ) : activeTab === 'gemini' ? (
                       <span className="flex items-center gap-2">
@@ -1418,6 +1727,18 @@ export default function AccountsPage() {
                     <span className="flex items-center gap-2">
                       <Qwen className="size-4" />
                       Qwen
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="zai-tts">
+                    <span className="flex items-center gap-2">
+                      <OpenAI className="size-4" />
+                      ZAI TTS
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="zai-image">
+                    <span className="flex items-center gap-2">
+                      <OpenAI className="size-4" />
+                      ZAI Image
                     </span>
                   </SelectItem>
                   <SelectItem value="codex">
@@ -2049,7 +2370,6 @@ export default function AccountsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="min-w-[100px]">账号ID</TableHead>
-                        <TableHead className="min-w-[160px]">账号名称</TableHead>
                         <TableHead className="min-w-[200px]">邮箱</TableHead>
                         <TableHead className="min-w-[180px]">项目ID</TableHead>
                         <TableHead className="min-w-[80px]">状态</TableHead>
@@ -2063,10 +2383,7 @@ export default function AccountsPage() {
                           <TableCell className="font-mono text-sm">
                             {account.account_id}
                           </TableCell>
-                          <TableCell>
-                            {account.account_name || account.email || '未命名'}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell className="text-sm break-all">
                             {account.email || '-'}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
@@ -2102,10 +2419,6 @@ export default function AccountsPage() {
                                   <IconCopy className="size-4 mr-2" />
                                   复制凭证为JSON
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleRenameGeminiCLI(account)}>
-                                  <IconEdit className="size-4 mr-2" />
-                                  重命名
-                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleToggleGeminiCLIStatus(account)}>
                                   {account.status === 1 ? (
                                     <>
@@ -2121,6 +2434,196 @@ export default function AccountsPage() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleDeleteGeminiCLIAccount(account.account_id)}
+                                  className="text-red-600"
+                                >
+                                  <IconTrash className="size-4 mr-2" />
+                                  删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ZAI TTS 账号列表 */}
+        {activeTab === 'zai-tts' && (
+          <Card className="flex min-h-0 flex-1 flex-col">
+            <CardHeader className="text-left">
+              <CardTitle className="text-left">ZAI TTS 账号</CardTitle>
+              <CardDescription className="text-left">
+                共 {zaiTtsAccounts.length} 个账号
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
+              {zaiTtsAccounts.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-lg mb-2">暂无ZAI TTS账号</p>
+                  <p className="text-sm">点击“添加账号”按钮添加您的第一个 ZAI TTS 账号</p>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">账号ID</TableHead>
+                        <TableHead className="min-w-[160px]">账号名称</TableHead>
+                        <TableHead className="min-w-[180px]">ZAI_USERID</TableHead>
+                        <TableHead className="min-w-[140px]">音色ID</TableHead>
+                        <TableHead className="min-w-[80px]">状态</TableHead>
+                        <TableHead className="min-w-[140px]">添加时间</TableHead>
+                        <TableHead className="text-right min-w-[80px]">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {zaiTtsAccounts.map((account) => (
+                        <TableRow key={account.account_id}>
+                          <TableCell className="font-mono text-sm">
+                            {account.account_id}
+                          </TableCell>
+                          <TableCell>
+                            {account.account_name || '未命名'}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {account.zai_user_id}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {account.voice_id}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={account.status === 1 ? 'default' : 'secondary'}>
+                              {account.status === 1 ? '启用' : '禁用'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {account.created_at ? new Date(account.created_at).toLocaleString('zh-CN') : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <IconDotsVertical className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditZaiTtsAccount(account)}>
+                                  <IconEdit className="size-4 mr-2" />
+                                  编辑配置
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleToggleZaiTtsStatus(account)}>
+                                  {account.status === 1 ? (
+                                    <>
+                                      <IconToggleLeft className="size-4 mr-2" />
+                                      禁用
+                                    </>
+                                  ) : (
+                                    <>
+                                      <IconToggleRight className="size-4 mr-2" />
+                                      启用
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteZaiTtsAccount(account.account_id)}
+                                  className="text-red-600"
+                                >
+                                  <IconTrash className="size-4 mr-2" />
+                                  删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ZAI Image 账号列表 */}
+        {activeTab === 'zai-image' && (
+          <Card className="flex min-h-0 flex-1 flex-col">
+            <CardHeader className="text-left">
+              <CardTitle className="text-left">ZAI Image 账号</CardTitle>
+              <CardDescription className="text-left">
+                共 {zaiImageAccounts.length} 个账号
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
+              {zaiImageAccounts.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-lg mb-2">暂无ZAI Image账号</p>
+                  <p className="text-sm">点击“添加账号”按钮添加您的第一个 ZAI Image 账号</p>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">账号ID</TableHead>
+                        <TableHead className="min-w-[220px]">账号名称</TableHead>
+                        <TableHead className="min-w-[80px]">状态</TableHead>
+                        <TableHead className="min-w-[160px]">添加时间</TableHead>
+                        <TableHead className="min-w-[160px]">最后使用</TableHead>
+                        <TableHead className="text-right min-w-[80px]">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {zaiImageAccounts.map((account) => (
+                        <TableRow key={account.account_id}>
+                          <TableCell className="font-mono text-sm">
+                            {account.account_id}
+                          </TableCell>
+                          <TableCell>
+                            {account.account_name || '未命名'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={account.status === 1 ? 'default' : 'secondary'}>
+                              {account.status === 1 ? '启用' : '禁用'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {account.created_at ? new Date(account.created_at).toLocaleString('zh-CN') : '-'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {account.last_used_at ? new Date(account.last_used_at).toLocaleString('zh-CN') : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <IconDotsVertical className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditZaiImageAccount(account)}>
+                                  <IconEdit className="size-4 mr-2" />
+                                  编辑配置
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleToggleZaiImageStatus(account)}>
+                                  {account.status === 1 ? (
+                                    <>
+                                      <IconToggleLeft className="size-4 mr-2" />
+                                      禁用
+                                    </>
+                                  ) : (
+                                    <>
+                                      <IconToggleRight className="size-4 mr-2" />
+                                      启用
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteZaiImageAccount(account.account_id)}
                                   className="text-red-600"
                                 >
                                   <IconTrash className="size-4 mr-2" />
@@ -2229,6 +2732,122 @@ export default function AccountsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ZAI TTS 编辑 Dialog */}
+      <Dialog
+        open={isZaiTtsEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsZaiTtsEditDialogOpen(open);
+          if (!open) {
+            setEditingZaiTtsAccount(null);
+            setZaiTtsEditAccountName('');
+            setZaiTtsEditUserId('');
+            setZaiTtsEditToken('');
+            setZaiTtsEditVoiceId('system_001');
+            setIsUpdatingZaiTts(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>编辑 ZAI TTS 账号</DialogTitle>
+            <DialogDescription>
+              {editingZaiTtsAccount ? `账号ID: ${editingZaiTtsAccount.account_id}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="zai-tts-edit-name">账号名称</Label>
+              <Input
+                id="zai-tts-edit-name"
+                value={zaiTtsEditAccountName}
+                onChange={(e) => setZaiTtsEditAccountName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="zai-tts-edit-user-id">ZAI_USERID</Label>
+              <Input
+                id="zai-tts-edit-user-id"
+                value={zaiTtsEditUserId}
+                onChange={(e) => setZaiTtsEditUserId(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="zai-tts-edit-token">ZAI_TOKEN（留空不修改）</Label>
+              <Input
+                id="zai-tts-edit-token"
+                value={zaiTtsEditToken}
+                onChange={(e) => setZaiTtsEditToken(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="zai-tts-edit-voice">音色ID</Label>
+              <Input
+                id="zai-tts-edit-voice"
+                value={zaiTtsEditVoiceId}
+                onChange={(e) => setZaiTtsEditVoiceId(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsZaiTtsEditDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={handleSubmitZaiTtsEdit} disabled={isUpdatingZaiTts}>
+              {isUpdatingZaiTts ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ZAI Image 编辑 Dialog */}
+      <Dialog
+        open={isZaiImageEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsZaiImageEditDialogOpen(open);
+          if (!open) {
+            setEditingZaiImageAccount(null);
+            setZaiImageEditAccountName('');
+            setZaiImageEditToken('');
+            setIsUpdatingZaiImage(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>编辑 ZAI Image 账号</DialogTitle>
+            <DialogDescription>
+              {editingZaiImageAccount ? `账号ID: ${editingZaiImageAccount.account_id}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="zai-image-edit-name">账号名称</Label>
+              <Input
+                id="zai-image-edit-name"
+                value={zaiImageEditAccountName}
+                onChange={(e) => setZaiImageEditAccountName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="zai-image-edit-token">ZAI_TOKEN（留空不修改）</Label>
+              <Input
+                id="zai-image-edit-token"
+                value={zaiImageEditToken}
+                onChange={(e) => setZaiImageEditToken(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsZaiImageEditDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={handleSubmitZaiImageEdit} disabled={isUpdatingZaiImage}>
+              {isUpdatingZaiImage ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* GeminiCLI 额度查询 Dialog */}
       <Dialog
         open={isGeminiCliQuotaDialogOpen}
@@ -2247,6 +2866,8 @@ export default function AccountsPage() {
             <DialogDescription className="break-all text-left">
               {geminiCliQuotaAccount ? `账号ID: ${geminiCliQuotaAccount.account_id}` : ''}
               {geminiCliQuotaData?.project_id ? ` | Project: ${geminiCliQuotaData.project_id}` : ''}
+              <br />
+              重置时间按中国时区（UTC+8）展示
             </DialogDescription>
           </DialogHeader>
 
@@ -2262,34 +2883,29 @@ export default function AccountsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="min-w-[220px]">模型</TableHead>
-                          <TableHead className="min-w-[120px]">Token类型</TableHead>
+                          <TableHead className="min-w-[120px]">层级</TableHead>
                           <TableHead className="min-w-[120px]">剩余比例</TableHead>
-                          <TableHead className="min-w-[140px]">剩余数值</TableHead>
-                          <TableHead className="min-w-[220px]">重置时间</TableHead>
+                          <TableHead className="min-w-[200px]">重置时间</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {geminiCliQuotaData.buckets.map((bucket, idx) => (
-                          <TableRow key={`${bucket.model_id}-${bucket.token_type ?? 'default'}-${idx}`}>
-                            <TableCell className="font-mono text-xs md:text-sm break-all">
-                              {bucket.model_id}
-                            </TableCell>
-                            <TableCell className="text-xs md:text-sm">
-                              {bucket.token_type || '-'}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs md:text-sm">
-                              {bucket.remaining_fraction === null || bucket.remaining_fraction === undefined
-                                ? '-'
-                                : `${(bucket.remaining_fraction * 100).toFixed(1)}%`}
+                        {groupGeminiQuotaByTier(geminiCliQuotaData.buckets).map((group) => (
+                          <TableRow key={group.tier}>
+                            <TableCell className="font-medium text-sm">
+                              <Badge variant={
+                                group.tier === 'Pro' ? 'default' :
+                                group.tier === 'Flash' ? 'secondary' : 'outline'
+                              }>
+                                {group.tier}
+                              </Badge>
                             </TableCell>
                             <TableCell className="font-mono text-xs md:text-sm">
-                              {bucket.remaining_amount === null || bucket.remaining_amount === undefined
+                              {group.remaining_fraction === null || group.remaining_fraction === undefined
                                 ? '-'
-                                : bucket.remaining_amount}
+                                : `${(group.remaining_fraction * 100).toFixed(1)}%`}
                             </TableCell>
-                            <TableCell className="text-xs md:text-sm text-muted-foreground break-all">
-                              {bucket.reset_time || '-'}
+                            <TableCell className="text-xs md:text-sm text-muted-foreground">
+                              {formatGeminiCliResetTime(group.reset_time)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -2445,56 +3061,6 @@ export default function AccountsPage() {
               disabled={isRenamingCodex || !newCodexAccountName.trim()}
             >
               {isRenamingCodex ? (
-                <>
-                  <MorphingSquare className="size-4 mr-2" />
-                  保存中...
-                </>
-              ) : (
-                '保存'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 重命名 GeminiCLI 账号 Dialog */}
-      <Dialog open={isGeminiCliRenameDialogOpen} onOpenChange={setIsGeminiCliRenameDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>重命名账号</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="gemini-cli-account-name">新的账号名称</Label>
-              <Input
-                id="gemini-cli-account-name"
-                placeholder="输入账号名称"
-                value={newGeminiCliAccountName}
-                onChange={(e) => setNewGeminiCliAccountName(e.target.value)}
-                maxLength={50}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isRenamingGeminiCli) {
-                    handleSubmitGeminiCliRename();
-                  }
-                }}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsGeminiCliRenameDialogOpen(false)}
-              disabled={isRenamingGeminiCli}
-            >
-              取消
-            </Button>
-            <Button
-              onClick={handleSubmitGeminiCliRename}
-              disabled={isRenamingGeminiCli || !newGeminiCliAccountName.trim()}
-            >
-              {isRenamingGeminiCli ? (
                 <>
                   <MorphingSquare className="size-4 mr-2" />
                   保存中...
@@ -3170,10 +3736,6 @@ export default function AccountsPage() {
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">账号ID</Label>
                       <p className="text-sm font-mono break-all">{detailGeminiCliAccount.account_id}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">账号名称</Label>
-                      <p className="text-sm break-all">{detailGeminiCliAccount.account_name || '未命名'}</p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">邮箱</Label>

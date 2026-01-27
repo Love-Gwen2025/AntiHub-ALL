@@ -211,13 +211,24 @@ class KiroAnthropicConverter:
         if not tools:
             return []
 
+        if len(tools) > 1:
+            normalized_names = [str(getattr(t, "name", "") or "").strip().lower() for t in tools]
+            has_web_search = any(n == "web_search" for n in normalized_names)
+            has_other = any(n and n != "web_search" for n in normalized_names)
+            if has_web_search and has_other:
+                tools = [t for t, n in zip(tools, normalized_names) if n != "web_search"]
+                logger.info("检测到 mixed tools，已移除内置 web_search（保留 %d 个工具）", len(tools))
+
         out: List[Dict[str, Any]] = []
         for t in tools:
             name = str(getattr(t, "name", "") or "").strip()
             if not name:
                 continue
 
-            desc = str(getattr(t, "description", "") or "")
+            desc = str(getattr(t, "description", "") or "").strip()
+            if not desc:
+                # Kiro upstream 会校验 tool.description 不能为空；为空会直接 400
+                desc = "当前工具无说明"
             if len(desc) > 10000:
                 desc = desc[:10000]
 

@@ -110,6 +110,7 @@ class UsageLogRepository:
             func.coalesce(func.sum(UsageLog.input_tokens), 0).label("input_tokens"),
             func.coalesce(func.sum(UsageLog.output_tokens), 0).label("output_tokens"),
             func.coalesce(func.sum(UsageLog.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(UsageLog.quota_consumed), 0).label("total_quota_consumed"),
             func.coalesce(func.avg(UsageLog.duration_ms), 0).label("avg_duration_ms"),
         )
         base_stmt = self._apply_filters(
@@ -133,6 +134,7 @@ class UsageLogRepository:
                 func.sum(case((UsageLog.success.is_(False), 1), else_=0)), 0
             ).label("failed_requests"),
             func.coalesce(func.sum(UsageLog.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(UsageLog.quota_consumed), 0).label("total_quota_consumed"),
         )
         by_config_stmt = self._apply_filters(
             by_config_stmt,
@@ -151,6 +153,7 @@ class UsageLogRepository:
                 "success_requests": int(r.success_requests or 0),
                 "failed_requests": int(r.failed_requests or 0),
                 "total_tokens": int(r.total_tokens or 0),
+                "total_quota_consumed": float(r.total_quota_consumed or 0.0),
             }
 
         # 按 model 聚合（只返回 top 50，避免返回过大）
@@ -158,6 +161,7 @@ class UsageLogRepository:
             UsageLog.model_name,
             func.count(UsageLog.id).label("total_requests"),
             func.coalesce(func.sum(UsageLog.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(UsageLog.quota_consumed), 0).label("total_quota_consumed"),
         )
         by_model_stmt = self._apply_filters(
             by_model_stmt,
@@ -166,7 +170,10 @@ class UsageLogRepository:
             end_at=end_at,
             config_type=config_type,
         ).group_by(UsageLog.model_name)
-        by_model_stmt = by_model_stmt.order_by(func.sum(UsageLog.total_tokens).desc()).limit(50)
+        by_model_stmt = by_model_stmt.order_by(
+            func.sum(UsageLog.total_tokens).desc(),
+            func.sum(UsageLog.quota_consumed).desc(),
+        ).limit(50)
         by_model_rows = (await self.db.execute(by_model_stmt)).all()
 
         by_model: Dict[str, Any] = {}
@@ -175,6 +182,7 @@ class UsageLogRepository:
             by_model[key] = {
                 "total_requests": int(r.total_requests or 0),
                 "total_tokens": int(r.total_tokens or 0),
+                "total_quota_consumed": float(r.total_quota_consumed or 0.0),
             }
 
         return {
@@ -184,8 +192,8 @@ class UsageLogRepository:
             "input_tokens": int(row.input_tokens or 0),
             "output_tokens": int(row.output_tokens or 0),
             "total_tokens": int(row.total_tokens or 0),
+            "total_quota_consumed": float(row.total_quota_consumed or 0.0),
             "avg_duration_ms": float(row.avg_duration_ms or 0),
             "by_config_type": by_config,
             "by_model": by_model,
         }
-

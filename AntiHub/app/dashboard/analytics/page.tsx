@@ -59,11 +59,11 @@ export default function AnalyticsPage() {
   const [requestLogs, setRequestLogs] = useState<RequestUsageLogItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [antigravityCurrentPage, setAntigravityCurrentPage] = useState(1); // Antigravity 分页
-  const [requestCurrentPage, setRequestCurrentPage] = useState(1); // Qwen/Codex/GeminiCLI 分页（本系统请求日志）
+  const [requestCurrentPage, setRequestCurrentPage] = useState(1); // Qwen/Codex/GeminiCLI/ZAI TTS 分页（本系统请求日志）
   const [totalRecords, setTotalRecords] = useState(0);
   const [antigravityTotalRecords, setAntigravityTotalRecords] = useState(0); // Antigravity 总记录数
   const [requestTotalRecords, setRequestTotalRecords] = useState(0);
-  const [activeTab, setActiveTab] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli'>('antigravity');
+  const [activeTab, setActiveTab] = useState<'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image'>('antigravity');
   const [isLoading, setIsLoading] = useState(true);
   const pageSize = 50;
 
@@ -97,7 +97,7 @@ export default function AnalyticsPage() {
 
         // 加载所有账号的消费记录并聚合
         await loadKiroLogs(accountsData);
-      } else if (activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli') {
+    } else if (activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli' || activeTab === 'zai-tts' || activeTab === 'zai-image') {
         const offset = (requestCurrentPage - 1) * pageSize;
         const configType = activeTab;
         const [statsData, logsData] = await Promise.all([
@@ -251,9 +251,18 @@ export default function AnalyticsPage() {
   const isFirstLoadForTab =
     (activeTab === 'antigravity' && quotas.length === 0 && allConsumptions.length === 0) ||
     (activeTab === 'kiro' && kiroLogs.length === 0 && !kiroStats) ||
-    ((activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli') && requestLogs.length === 0 && !requestStats);
+    ((activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli' || activeTab === 'zai-tts' || activeTab === 'zai-image') && requestLogs.length === 0 && !requestStats);
 
-  const requestProviderLabel = activeTab === 'codex' ? 'Codex' : activeTab === 'gemini-cli' ? 'GeminiCLI' : 'Qwen';
+  const requestProviderLabel =
+    activeTab === 'codex'
+      ? 'Codex'
+      : activeTab === 'gemini-cli'
+        ? 'GeminiCLI'
+        : activeTab === 'zai-tts'
+          ? 'ZAI TTS'
+          : activeTab === 'zai-image'
+            ? 'ZAI Image'
+          : 'Qwen';
 
   if (isLoading && isFirstLoadForTab) {
     return (
@@ -275,9 +284,9 @@ export default function AnalyticsPage() {
           <div></div>
           <Select
             value={activeTab}
-            onValueChange={(value: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli') => {
+            onValueChange={(value: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image') => {
               setActiveTab(value);
-              if (value === 'qwen' || value === 'codex' || value === 'gemini-cli') setRequestCurrentPage(1);
+              if (value === 'qwen' || value === 'codex' || value === 'gemini-cli' || value === 'zai-tts' || value === 'zai-image') setRequestCurrentPage(1);
             }}
           >
             <SelectTrigger className="w-[160px] h-9">
@@ -296,6 +305,16 @@ export default function AnalyticsPage() {
                   <span className="flex items-center gap-2">
                     <Qwen className="size-4" />
                     Qwen
+                  </span>
+                ) : activeTab === 'zai-tts' ? (
+                  <span className="flex items-center gap-2">
+                    <OpenAI className="size-4" />
+                    ZAI TTS
+                  </span>
+                ) : activeTab === 'zai-image' ? (
+                  <span className="flex items-center gap-2">
+                    <OpenAI className="size-4" />
+                    ZAI Image
                   </span>
                 ) : activeTab === 'gemini-cli' ? (
                   <span className="flex items-center gap-2">
@@ -327,6 +346,18 @@ export default function AnalyticsPage() {
                 <span className="flex items-center gap-2">
                   <Qwen className="size-4" />
                   Qwen
+                </span>
+              </SelectItem>
+              <SelectItem value="zai-tts">
+                <span className="flex items-center gap-2">
+                  <OpenAI className="size-4" />
+                  ZAI TTS
+                </span>
+              </SelectItem>
+              <SelectItem value="zai-image">
+                <span className="flex items-center gap-2">
+                  <OpenAI className="size-4" />
+                  ZAI Image
                 </span>
               </SelectItem>
               <SelectItem value="gemini-cli">
@@ -524,7 +555,7 @@ export default function AnalyticsPage() {
         )}
 
         {/* Qwen/Codex/GeminiCLI 请求统计（本系统记录） */}
-        {(activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli') && (
+        {(activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli' || activeTab === 'zai-tts' || activeTab === 'zai-image') && (
           <>
             <Card className="mb-6">
               <CardHeader>
@@ -539,8 +570,12 @@ export default function AnalyticsPage() {
                       <p className="text-2xl font-bold">{(requestStats.total_requests || 0).toLocaleString()}</p>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">总 Tokens</p>
-                      <p className="text-2xl font-bold">{(requestStats.total_tokens || 0).toLocaleString()}</p>
+                      <p className="text-sm text-muted-foreground">{activeTab === 'zai-image' ? '总次数' : '总 Tokens'}</p>
+                      <p className="text-2xl font-bold">
+                        {activeTab === 'zai-image'
+                          ? (requestStats.total_quota_consumed || 0).toLocaleString()
+                          : (requestStats.total_tokens || 0).toLocaleString()}
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">成功 / 失败</p>
@@ -570,7 +605,11 @@ export default function AnalyticsPage() {
                 {requestLogs.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <p className="text-lg mb-2">暂无使用记录</p>
-                    <p className="text-sm">先用 {requestProviderLabel} 发起一次对话吧！</p>
+                    <p className="text-sm">
+                      {activeTab === 'zai-image'
+                        ? `先用 ${requestProviderLabel} 生成一张图吧！`
+                        : `先用 ${requestProviderLabel} 发起一次对话吧！`}
+                    </p>
                   </div>
                 ) : (
                   <>
@@ -580,9 +619,21 @@ export default function AnalyticsPage() {
                           <TableRow>
                             <TableHead className="min-w-[90px]">状态</TableHead>
                             <TableHead className="min-w-[160px]">模型</TableHead>
-                            <TableHead className="min-w-[110px]">Input</TableHead>
-                            <TableHead className="min-w-[110px]">Output</TableHead>
-                            <TableHead className="min-w-[110px]">Total</TableHead>
+                            {activeTab === 'zai-tts' && (
+                              <>
+                                <TableHead className="min-w-[140px]">音色ID</TableHead>
+                                <TableHead className="min-w-[140px]">账号ID</TableHead>
+                              </>
+                            )}
+                            {activeTab === 'zai-image' ? (
+                              <TableHead className="min-w-[110px]">次数</TableHead>
+                            ) : (
+                              <>
+                                <TableHead className="min-w-[110px]">Input</TableHead>
+                                <TableHead className="min-w-[110px]">Output</TableHead>
+                                <TableHead className="min-w-[110px]">Total</TableHead>
+                              </>
+                            )}
                             <TableHead className="min-w-[100px]">耗时</TableHead>
                             <TableHead className="min-w-[160px]">时间</TableHead>
                             <TableHead className="min-w-[240px]">错误</TableHead>
@@ -606,15 +657,33 @@ export default function AnalyticsPage() {
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="font-mono text-sm whitespace-nowrap">
-                                {(log.input_tokens || 0).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="font-mono text-sm whitespace-nowrap">
-                                {(log.output_tokens || 0).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="font-mono text-sm whitespace-nowrap">
-                                {(log.total_tokens || 0).toLocaleString()}
-                              </TableCell>
+                              {activeTab === 'zai-tts' && (
+                                <>
+                                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                                    {log.tts_voice_id || '-'}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                                    {log.tts_account_id || '-'}
+                                  </TableCell>
+                                </>
+                              )}
+                              {activeTab === 'zai-image' ? (
+                                <TableCell className="font-mono text-sm whitespace-nowrap">
+                                  {(log.quota_consumed || 0).toLocaleString()}
+                                </TableCell>
+                              ) : (
+                                <>
+                                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                                    {(log.input_tokens || 0).toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                                    {(log.output_tokens || 0).toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                                    {(log.total_tokens || 0).toLocaleString()}
+                                  </TableCell>
+                                </>
+                              )}
                               <TableCell className="font-mono text-sm whitespace-nowrap">
                                 {(log.duration_ms || 0).toLocaleString()}ms
                               </TableCell>

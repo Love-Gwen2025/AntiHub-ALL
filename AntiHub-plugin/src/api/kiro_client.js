@@ -52,7 +52,8 @@ class KiroClient {
           auth: account.auth_method,
           refreshToken: account.refresh_token,
           clientId: account.client_id,
-          clientSecret: account.client_secret
+          clientSecret: account.client_secret,
+          region: account.region
         });
         
         const expires_at = Date.now() + (tokenData.expires_in * 1000);
@@ -103,11 +104,11 @@ class KiroClient {
     const requestBody = JSON.stringify(cwRequest);
 
     return new Promise((resolve, reject) => {
-      const headers = kiroService.getCodeWhispererHeaders(account.access_token, account.machineid);
+      const headers = kiroService.getCodeWhispererHeaders(account.access_token, account.machineid, account.region);
       headers['Content-Length'] = Buffer.byteLength(requestBody);
 
       const reqOptions = {
-        hostname: 'q.us-east-1.amazonaws.com',
+        hostname: headers.host,
         path: '/generateAssistantResponse',
         method: 'POST',
         headers
@@ -175,17 +176,31 @@ class KiroClient {
     }
 
     const payload = { ...cwRequest };
+
+    // Kiro: toolSpecification.description 不能为空，否则会 400
+    try {
+      const tools =
+        payload?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools;
+      if (Array.isArray(tools)) {
+        for (const t of tools) {
+          const spec = t?.toolSpecification || t?.tool_specification;
+          if (spec && (spec.description == null || String(spec.description).trim() === '')) {
+            spec.description = '当前工具无说明';
+          }
+        }
+      }
+    } catch {}
     if (typeof account.profile_arn === 'string' && account.profile_arn.trim()) {
       payload.profileArn = account.profile_arn.trim();
     }
     const requestBody = JSON.stringify(payload);
 
     return new Promise((resolve, reject) => {
-      const headers = kiroService.getCodeWhispererHeaders(account.access_token, account.machineid);
+      const headers = kiroService.getCodeWhispererHeaders(account.access_token, account.machineid, account.region);
       headers['Content-Length'] = Buffer.byteLength(requestBody);
 
       const reqOptions = {
-        hostname: 'q.us-east-1.amazonaws.com',
+        hostname: headers.host,
         path: '/generateAssistantResponse',
         method: 'POST',
         headers
@@ -248,7 +263,7 @@ class KiroClient {
     logger.info(`[${requestId}] 开始Kiro MCP WebSearch: model=${model}, user_id=${user_id}, account_id=${account.account_id}`);
 
     try {
-      return await kiroService.mcpWebSearch(query, account.access_token, account.machineid);
+      return await kiroService.mcpWebSearch(query, account.access_token, account.machineid, account.region);
     } catch (error) {
       logger.error(`[${requestId}] MCP WebSearch失败:`, error.message);
 
@@ -485,7 +500,8 @@ class KiroClient {
             auth: account.auth_method,
             refreshToken: account.refresh_token,
             clientId: account.client_id,
-            clientSecret: account.client_secret
+            clientSecret: account.client_secret,
+            region: account.region
           });
           
           const expires_at = Date.now() + (tokenData.expires_in * 1000);
@@ -510,7 +526,8 @@ class KiroClient {
       const usageLimitsData = await kiroService.getUsageLimits(
         accessToken,
         account.profile_arn,
-        account.machineid
+        account.machineid,
+        account.region
       );
 
       // 4. 更新数据库中的余额信息（包含免费试用和bonus信息）

@@ -590,6 +590,26 @@ export interface Account {
   quotas?: any;
 }
 
+export interface ZaiTTSAccount {
+  account_id: number;
+  account_name: string;
+  status: number;
+  zai_user_id: string;
+  voice_id: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_used_at?: string | null;
+}
+
+export interface ZaiImageAccount {
+  account_id: number;
+  account_name: string;
+  status: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_used_at?: string | null;
+}
+
 /**
  * 获取账号列表
  */
@@ -739,6 +759,144 @@ export async function updateAccountName(cookieId: string, name: string): Promise
 }
 
 /**
+ * ZAI TTS 账号管理
+ */
+export async function getZaiTTSAccounts(): Promise<ZaiTTSAccount[]> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiTTSAccount[] }>(
+    `${API_BASE_URL}/api/zai-tts/accounts`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function createZaiTTSAccount(payload: {
+  account_name: string;
+  zai_user_id: string;
+  token: string;
+  voice_id: string;
+}): Promise<ZaiTTSAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiTTSAccount }>(
+    `${API_BASE_URL}/api/zai-tts/accounts`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiTTSAccountStatus(accountId: number, status: number): Promise<ZaiTTSAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiTTSAccount }>(
+    `${API_BASE_URL}/api/zai-tts/accounts/${accountId}/status`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiTTSAccountName(accountId: number, accountName: string): Promise<ZaiTTSAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiTTSAccount }>(
+    `${API_BASE_URL}/api/zai-tts/accounts/${accountId}/name`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ account_name: accountName }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiTTSAccountCredentials(accountId: number, payload: {
+  zai_user_id?: string;
+  token?: string;
+  voice_id?: string;
+}): Promise<ZaiTTSAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiTTSAccount }>(
+    `${API_BASE_URL}/api/zai-tts/accounts/${accountId}/credentials`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }
+  );
+  return result.data;
+}
+
+export async function deleteZaiTTSAccount(accountId: number): Promise<void> {
+  await fetchWithAuth<{ success: boolean }>(
+    `${API_BASE_URL}/api/zai-tts/accounts/${accountId}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * ZAI Image 账号管理
+ */
+export async function getZaiImageAccounts(): Promise<ZaiImageAccount[]> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiImageAccount[] }>(
+    `${API_BASE_URL}/api/zai-image/accounts`,
+    { method: 'GET' }
+  );
+  return result.data;
+}
+
+export async function createZaiImageAccount(payload: {
+  account_name: string;
+  token: string;
+}): Promise<ZaiImageAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiImageAccount }>(
+    `${API_BASE_URL}/api/zai-image/accounts`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiImageAccountStatus(accountId: number, status: number): Promise<ZaiImageAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiImageAccount }>(
+    `${API_BASE_URL}/api/zai-image/accounts/${accountId}/status`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiImageAccountName(accountId: number, accountName: string): Promise<ZaiImageAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiImageAccount }>(
+    `${API_BASE_URL}/api/zai-image/accounts/${accountId}/name`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ account_name: accountName }),
+    }
+  );
+  return result.data;
+}
+
+export async function updateZaiImageAccountCredentials(accountId: number, payload: {
+  token?: string;
+}): Promise<ZaiImageAccount> {
+  const result = await fetchWithAuth<{ success: boolean; data: ZaiImageAccount }>(
+    `${API_BASE_URL}/api/zai-image/accounts/${accountId}/credentials`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }
+  );
+  return result.data;
+}
+
+export async function deleteZaiImageAccount(accountId: number): Promise<void> {
+  await fetchWithAuth<{ success: boolean }>(
+    `${API_BASE_URL}/api/zai-image/accounts/${accountId}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
  * 获取 OAuth 授权 URL
  */
 export async function getOAuthAuthorizeUrl(isShared: number = 0): Promise<{ auth_url: string; state: string; expires_in: number }> {
@@ -759,7 +917,7 @@ export interface PluginAPIKey {
   user_id: number;
   key_preview: string;
   name: string;
-  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli'; // 配置类型
+  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image'; // 配置类型
   is_active: boolean;
   created_at: string;
   last_used_at: string | null;
@@ -771,7 +929,7 @@ export interface CreateAPIKeyResponse {
   user_id: number;
   key: string;
   name: string;
-  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli'; // 配置类型
+  config_type: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image'; // 配置类型
   is_active: boolean;
   created_at: string;
   last_used_at: string | null;
@@ -802,7 +960,7 @@ export async function getAPIKeyInfo(): Promise<PluginAPIKey | null> {
  */
 export async function generateAPIKey(
   name: string = 'My API Key',
-  configType: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' = 'antigravity'
+  configType: 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image' = 'antigravity'
 ): Promise<CreateAPIKeyResponse> {
   return fetchWithAuth<CreateAPIKeyResponse>(
     `${API_BASE_URL}/api/api-keys`,
@@ -899,16 +1057,19 @@ export interface RequestUsageStats {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  total_quota_consumed: number;
   avg_duration_ms: number;
   by_config_type: Record<string, {
     total_requests: number;
     success_requests: number;
     failed_requests: number;
     total_tokens: number;
+    total_quota_consumed: number;
   }>;
   by_model: Record<string, {
     total_requests: number;
     total_tokens: number;
+    total_quota_consumed: number;
   }>;
 }
 
@@ -927,6 +1088,8 @@ export interface RequestUsageLogItem {
   output_tokens: number;
   total_tokens: number;
   duration_ms: number;
+  tts_voice_id?: string | null;
+  tts_account_id?: string | null;
   created_at: string | null;
 }
 
@@ -1015,7 +1178,7 @@ export async function getRequestUsageLogs(params?: {
 
 // ==================== 聊天相关 API ====================
 
-export type ApiType = 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli';
+export type ApiType = 'antigravity' | 'kiro' | 'qwen' | 'codex' | 'gemini-cli' | 'zai-tts' | 'zai-image';
 
 export interface OpenAIModel {
   id: string;
@@ -1754,6 +1917,7 @@ export interface KiroAwsIdcDeviceAuthorizeResponse {
 export async function kiroAwsIdcDeviceAuthorize(payload: {
   account_name: string;
   is_shared?: number;
+  region?: string;
 }): Promise<KiroAwsIdcDeviceAuthorizeResponse> {
   return fetchWithAuth<KiroAwsIdcDeviceAuthorizeResponse>(
     `${API_BASE_URL}/api/kiro/aws-idc/device/authorize`,
@@ -1762,6 +1926,7 @@ export async function kiroAwsIdcDeviceAuthorize(payload: {
       body: JSON.stringify({
         account_name: payload.account_name,
         is_shared: payload.is_shared ?? 0,
+        region: payload.region,
       }),
     }
   );
@@ -1791,6 +1956,7 @@ export async function importKiroAwsIdcAccount(payload: {
   clientSecret: string;
   accountName: string;
   isShared?: number;
+  region?: string;
 }): Promise<KiroAccount> {
   const result = await fetchWithAuth<{ success: boolean; data: KiroAccount }>(
     `${API_BASE_URL}/api/kiro/aws-idc/import`,
@@ -1803,6 +1969,7 @@ export async function importKiroAwsIdcAccount(payload: {
         ],
         account_name: payload.accountName,
         is_shared: payload.isShared ?? 0,
+        region: payload.region,
       }),
     }
   );
