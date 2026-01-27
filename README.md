@@ -22,11 +22,11 @@
 - https://github.com/AntiHub-Project/Antigv-plugin
 - https://github.com/AntiHub-Project/Backend
 
-这个仓库把 `AntiHub`（前端）、`AntiHub-Backend`（后端）、`AntiHub-plugin`（插件服务）统一成一套 `docker compose` 部署。
+这个仓库把 `AntiHub`（前端）、`AntiHub-Backend`（后端）、`AntiHub-plugin`（插件服务）统一成一套 `docker compose` 部署。目标很简单：三者之间的内部地址/端口都已经预置好；默认 `docker-compose.yml` 自带 PostgreSQL + Redis，你主要只需要配置你自己的密钥；如果你想接入外部 PG/Redis，用 `docker-compose.core.yml`。
 
-目标很简单：三者之间的内部地址/端口都已经预置好；默认 `docker-compose.yml` 自带 PostgreSQL + Redis，你主要只需要配置你自己的密钥；如果你想接入外部 PG/Redis，用 `docker-compose.core.yml`。
+## 注意事项
 
-另外：前端已内置 `/backend/* -> http://backend:8000/*` 转发，所以你不需要单独给 Nginx 配 `/backend/` 的反代规则（当然你想配也行）。
+当前参考 [Kiro.rs](https://github.com/hank9999/kiro.rs) 对最新版本CC的修复，Antihub-ALL同步了`/backend/cc`为CC特化端口，再次鸣谢相关参考项目
 
 ## 当前2API
 
@@ -81,24 +81,6 @@ docker compose up -d
 - 直连：`http://localhost:3000`（或你在 `.env` 里设置的 `WEB_PORT`）
 - 或者用你自己的反代把域名转发到前端端口
 
-## 生成 PLUGIN_API_ENCRYPTION_KEY
-
-```bash
-docker compose run --rm backend python generate_encryption_key.py
-```
-
-## 镜像构建（GitHub Actions）
-
-工作流：`.github/workflows/docker-images.yml`
-
-会构建并推送到 GHCR：
-
-- `ghcr.io/<owner>/antihub-web`
-- `ghcr.io/<owner>/antihub-backend`
-- `ghcr.io/<owner>/antihub-plugin`
-
-默认分支推 `latest`，同时推 `sha` 标签；打 `v*` tag 会推对应 tag。
-
 ## 鸣谢
 
 - [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) - 提供AN渠道的Token导入代码
@@ -106,3 +88,4 @@ docker compose run --rm backend python generate_encryption_key.py
 - [KiroGate](https://github.com/aliom-v/KiroGate) - Kiro渠道的Token导入、思考支持
 - [AIClient-2-API](https://github.com/justlovemaki/AIClient-2-API) - Kiro AWS IMA账户导入代码
 - [ZAI-TTS2API](https://github.com/aahl/zai-tts2api) - ZAI-TTS对接代码
+- [Kiro.rs](https://github.com/hank9999/kiro.rs) - CC2.1.19新字段解析方法代码
