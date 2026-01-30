@@ -9,6 +9,7 @@ AntiHub-ALL 是一个 Docker Compose 单体仓库，整合了 AntiHub 全栈服�
 - **AntiHub-Backend/** — FastAPI 后端 (Python 3.10+, SQLAlchemy 2.0, Alembic)
 - **AntiHub-plugin/** — Node.js 插件/代理服务 (Express 5, ES Modules)
 - **AntiHook/** — Go 工具程序
+- **4-docs/** — This folder contains some project documents. Please check after each implementation to see if any documents need to be updated. 
 
 ## 常用命令
 

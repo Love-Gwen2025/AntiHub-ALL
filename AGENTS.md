@@ -9,6 +9,7 @@ This repository is a Docker Compose monorepo that ships a working AntiHub stack:
 - `AntiHub-plugin/` — Node.js plugin/proxy service (used by the backend)
 - `AntiHook/` — Go utilities/binaries
 - `docker/` — Compose helpers (e.g. DB init scripts)
+- `4-docs/` — This folder contains some project documents. Please check after each implementation to see if any documents need to be updated. 
 
 Top-level deployment files live at the repo root: `docker-compose.yml`, `docker-compose.core.yml`, `deploy.sh`, `.env.example`.
 
