@@ -6,7 +6,7 @@ services:
   # 使用方式（推荐 deploy.sh 自动执行）：
   #   docker compose -f docker-compose.yml -f docker/docker-compose.db-init.yml run --rm db-init
   db-init:
-    image: postgres:16-alpine
+    image: postgres:18.1-alpine
     depends_on:
       postgres:
         condition: service_healthy
