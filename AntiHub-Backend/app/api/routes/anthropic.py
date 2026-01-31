@@ -162,6 +162,9 @@ async def _create_message_impl(
             upstream_request = KiroAnthropicConverter.to_kiro_chat_completions_request(request)
         else:
             upstream_request = AnthropicAdapter.anthropic_to_openai_request(request)
+            if config_type == "qwen":
+                # Qwen 上游不支持 OpenAI 多模态 content list；这里做最小可用降级（保文本，丢图）。
+                upstream_request = AnthropicAdapter.sanitize_openai_request_for_qwen(upstream_request)
 
         # 准备额外的请求头
         extra_headers = {}

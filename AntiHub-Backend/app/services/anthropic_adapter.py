@@ -126,6 +126,57 @@ class AnthropicAdapter:
         return openai_request
 
     @classmethod
+    def sanitize_openai_request_for_qwen(
+        cls,
+        openai_request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Qwen 通道的最小可用降级：
+
+        Claude 请求在转换成 OpenAI ChatCompletions 后，可能包含多模态 `content: []`
+        （例如 `[{type:text,...},{type:image_url,...}]`）。Qwen 上游通常不接受该结构，
+        会直接 400。
+
+        这里仅对 Qwen 做“保文本、丢图”的降级：
+        - 仅保留 content list 里的 text parts
+        - 丢弃 image_url 等非文本 parts
+        - 若消息最终无文本（例如纯图片），直接跳过该条消息
+        """
+        if not isinstance(openai_request, dict):
+            raise ValueError("openai_request must be a dict")
+
+        raw_messages = openai_request.get("messages")
+        if not isinstance(raw_messages, list):
+            return openai_request
+
+        sanitized_messages: List[Dict[str, Any]] = []
+        for item in raw_messages:
+            if not isinstance(item, dict):
+                continue
+
+            content = item.get("content")
+            if isinstance(content, list):
+                texts: List[str] = []
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") != "text":
+                        continue
+                    text = part.get("text")
+                    if isinstance(text, str) and text.strip():
+                        texts.append(text)
+
+                merged = "\n".join(texts).strip()
+                if not merged:
+                    continue
+
+                item = {**item, "content": merged}
+
+            sanitized_messages.append(item)
+
+        return {**openai_request, "messages": sanitized_messages}
+
+    @classmethod
     def _strip_builtin_web_search_when_mixed(
         cls,
         tools: List[Any],

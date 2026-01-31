@@ -21,7 +21,7 @@
 | --- | --- |
 | `OAIResponses` | `codex` |
 | `OAIChat` | `antigravity`, `kiro`, `qwen`, `gemini-cli` |
-| `Claude` | `antigravity`, `kiro` |
+| `Claude` | `antigravity`, `kiro`, `qwen` |
 | `Gemini` | `gemini-cli`, `zai-image` |
 
 目标态（默认不启用，仅作规划）：

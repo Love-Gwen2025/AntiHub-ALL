@@ -23,7 +23,8 @@ class TestSpecGuard(unittest.TestCase):
 
     def test_claude_allow_and_reject(self) -> None:
         ensure_spec_allowed("Claude", "antigravity")
-        self._assert_rejected("Claude", "qwen")
+        ensure_spec_allowed("Claude", "qwen")
+        self._assert_rejected("Claude", "codex")
 
     def test_gemini_allow_and_reject(self) -> None:
         ensure_spec_allowed("Gemini", "gemini-cli")
@@ -32,4 +33,3 @@ class TestSpecGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
