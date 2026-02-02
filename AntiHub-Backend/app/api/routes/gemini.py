@@ -312,22 +312,18 @@ async def generate_content(
 
             return result
 
-        # gemini-cli：只允许文本生成，拒绝图片模型/inlineData/imageConfig
+        # gemini-cli：拒绝图片生成模型（但允许多模态输入 inlineData）
         normalized_model = (model or "").strip().lower()
         if normalized_model in LOCAL_IMAGE_MODELS or "image" in normalized_model:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="gemini-cli 不支持图片模型/图片生成",
             )
-        if _request_has_inline_data(request):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="gemini-cli 不支持 inlineData（仅支持纯文本请求）",
-            )
+        # 注意：gemini-cli 支持多模态输入（inlineData），但不支持图片生成配置
         if request.generationConfig and request.generationConfig.imageConfig:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="gemini-cli 不支持 generationConfig.imageConfig",
+                detail="gemini-cli 不支持 generationConfig.imageConfig（图片生成配置）",
             )
 
         result = await gemini_cli_service.gemini_generate_content(
@@ -540,15 +536,11 @@ async def stream_generate_content(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="gemini-cli 不支持图片模型/图片生成",
                 )
-            if _request_has_inline_data(request):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="gemini-cli 不支持 inlineData（仅支持纯文本请求）",
-                )
+            # 注意：gemini-cli 支持多模态输入（inlineData），但不支持图片生成配置
             if request.generationConfig and request.generationConfig.imageConfig:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="gemini-cli 不支持 generationConfig.imageConfig",
+                    detail="gemini-cli 不支持 generationConfig.imageConfig（图片生成配置）",
                 )
 
             tracker = GeminiSSEUsageTracker()
