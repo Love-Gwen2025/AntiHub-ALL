@@ -15,6 +15,7 @@ import asyncio
 import email.utils
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -41,6 +42,25 @@ MODELS_CACHE_TTL_SECONDS = 24 * 60 * 60
 MODELS_FALLBACK_CACHE_TTL_SECONDS = 5 * 60
 QUOTA_BACKOFF_BASE_SECONDS = 1
 QUOTA_BACKOFF_MAX_SECONDS = 30 * 60
+
+
+class GeminiCLIModelCooldownError(Exception):
+    def __init__(self, *, model: str, earliest: datetime):
+        self.model = (model or "").strip() or "requested model"
+        if earliest.tzinfo is None:
+            earliest = earliest.replace(tzinfo=timezone.utc)
+        self.earliest = earliest.astimezone(timezone.utc)
+        super().__init__(
+            f"GeminiCLI：账户均无额度（model={self.model}），最早恢复时间：{_iso(self.earliest)}"
+        )
+
+    def retry_after_seconds(self, *, now: Optional[datetime] = None) -> int:
+        now_dt = now or _now_utc()
+        if now_dt.tzinfo is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        now_dt = now_dt.astimezone(timezone.utc)
+        seconds = int(math.ceil((self.earliest - now_dt).total_seconds()))
+        return max(seconds, 0)
 
 
 def _env_flag_enabled(key: str) -> bool:
@@ -1113,7 +1133,7 @@ class GeminiCLIAPIService:
 
             if not available:
                 if earliest is not None:
-                    raise ValueError(f"GeminiCLI 模型 {model} 无可用账号（全部在冷却中），最早恢复时间：{_iso(earliest)}")
+                    raise GeminiCLIModelCooldownError(model=model, earliest=earliest)
                 raise ValueError(f"GeminiCLI 模型 {model} 无可用账号（可能都缺少 project_id 或已被本次请求排除）")
 
             key = _cursor_key(user_id, model)

@@ -20,7 +20,7 @@ from app.cache import RedisClient
 from app.core.spec_guard import ensure_spec_allowed
 from app.models.user import User
 from app.services.plugin_api_service import PluginAPIService
-from app.services.gemini_cli_api_service import GeminiCLIAPIService
+from app.services.gemini_cli_api_service import GeminiCLIAPIService, GeminiCLIModelCooldownError
 from app.schemas.plugin_api import GenerateContentRequest
 from app.services.usage_log_service import SSEUsageTracker, extract_openai_usage
 from app.services.usage_log_service import UsageLogService
@@ -360,6 +360,27 @@ async def generate_content(
         return result
     except HTTPException:
         raise
+    except GeminiCLIModelCooldownError as e:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        if effective_config_type in ("gemini-cli", "antigravity"):
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=model,
+                config_type=effective_config_type,
+                stream=True,
+                success=False,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+            headers={"Retry-After": str(e.retry_after_seconds())},
+        )
     except httpx.HTTPStatusError as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
         # 透传上游API的错误响应
@@ -387,6 +408,27 @@ async def generate_content(
         raise HTTPException(
             status_code=e.response.status_code,
             detail=detail
+        )
+    except GeminiCLIModelCooldownError as e:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        if effective_config_type in ("gemini-cli", "antigravity"):
+            await UsageLogService.record(
+                user_id=current_user.id,
+                api_key_id=api_key_id,
+                endpoint=endpoint,
+                method=method,
+                model_name=model,
+                config_type=effective_config_type,
+                stream=False,
+                success=False,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+            headers={"Retry-After": str(e.retry_after_seconds())},
         )
     except ValueError as e:
         duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -544,14 +586,25 @@ async def stream_generate_content(
                 )
 
             tracker = GeminiSSEUsageTracker()
+            gemini_cli_stream = gemini_cli_service.gemini_stream_generate_content(
+                user_id=current_user.id,
+                model=model,
+                request_data=request.model_dump(),
+            )
+            try:
+                first_chunk = await gemini_cli_stream.__anext__()
+            except Exception:
+                try:
+                    await gemini_cli_stream.aclose()
+                except Exception:
+                    pass
+                raise
+            tracker.feed(first_chunk)
 
             async def generate():
                 try:
-                    async for chunk in gemini_cli_service.gemini_stream_generate_content(
-                        user_id=current_user.id,
-                        model=model,
-                        request_data=request.model_dump(),
-                    ):
+                    yield first_chunk
+                    async for chunk in gemini_cli_stream:
                         tracker.feed(chunk)
                         yield chunk
                 except Exception as e:
