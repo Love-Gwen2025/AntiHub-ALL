@@ -155,6 +155,9 @@ class KiroAnthropicConverter:
         lower = m.lower()
         if "sonnet" in lower:
             return "claude-sonnet-4.5"
+        # Opus 4.6 优先匹配，防止被 4.5 兜底
+        if "opus-4-6" in lower or "opus-4.6" in lower:
+            return "claude-opus-4.6"
         if "opus" in lower:
             return "claude-opus-4.5"
         if "haiku" in lower:
