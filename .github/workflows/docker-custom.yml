@@ -19,6 +19,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  # 将仓库所有者转换为小写（Docker镜像名必须小写）
+  IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
   # ============ Web 前端 ============
@@ -30,6 +32,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 将所有者名称转换为小写
+      - name: Set lowercase owner
+        id: owner
+        run: echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -51,8 +58,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-web:custom
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-web:custom-sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-web:custom
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-web:custom-sha-${{ github.sha }}
           cache-from: type=gha,scope=web-custom
           cache-to: type=gha,mode=max,scope=web-custom
 
@@ -65,6 +72,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 将所有者名称转换为小写
+      - name: Set lowercase owner
+        id: owner
+        run: echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -84,8 +96,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-backend:custom
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-backend:custom-sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-backend:custom
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-backend:custom-sha-${{ github.sha }}
           cache-from: type=gha,scope=backend-custom
           cache-to: type=gha,mode=max,scope=backend-custom
 
@@ -98,6 +110,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 将所有者名称转换为小写
+      - name: Set lowercase owner
+        id: owner
+        run: echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -117,7 +134,7 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-plugin:custom
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-plugin:custom-sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-plugin:custom
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/antihub-plugin:custom-sha-${{ github.sha }}
           cache-from: type=gha,scope=plugin-custom
           cache-to: type=gha,mode=max,scope=plugin-custom
