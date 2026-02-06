@@ -13,7 +13,11 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.schemas.anthropic import AnthropicMessagesRequest
-from app.utils.kiro_converters import generate_thinking_hint, inject_thinking_hint, is_thinking_enabled
+from app.utils.kiro_converters import (
+    generate_thinking_hint,
+    inject_thinking_hint,
+    is_thinking_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,7 @@ class KiroAnthropicConverter:
         "claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
         "claude-sonnet-4-20250514": "claude-sonnet-4",
         "claude-opus-4-5-20251101": "claude-opus-4.5",
+        "claude-opus-4-6-20260203": "claude-opus-4.6",  # Claude Opus 4.6 (100万token上下文)
         "claude-haiku-4-5-20251001": "claude-haiku-4.5",
     }
 
@@ -40,7 +45,9 @@ class KiroAnthropicConverter:
     }
 
     @classmethod
-    def to_kiro_chat_completions_request(cls, request: AnthropicMessagesRequest) -> Dict[str, Any]:
+    def to_kiro_chat_completions_request(
+        cls, request: AnthropicMessagesRequest
+    ) -> Dict[str, Any]:
         """
         返回给 plug-in API 的请求体（仍走 /v1/kiro/chat/completions），但 payload 是 conversationState。
         plug-in 会识别 `conversationState` 并直接转发到 /generateAssistantResponse。
@@ -51,9 +58,9 @@ class KiroAnthropicConverter:
         model_id = cls._map_model(request.model)
         thinking_cfg = getattr(request, "thinking", None)
 
-        conversation_id = cls._extract_session_id(getattr(getattr(request, "metadata", None), "user_id", None)) or str(
-            uuid.uuid4()
-        )
+        conversation_id = cls._extract_session_id(
+            getattr(getattr(request, "metadata", None), "user_id", None)
+        ) or str(uuid.uuid4())
         agent_continuation_id = str(uuid.uuid4())
 
         # 1) tools 定义（来自当前请求）
@@ -80,13 +87,19 @@ class KiroAnthropicConverter:
 
         # 4) currentMessage（最后一条消息）
         last = request.messages[-1]
-        current_text, current_images, current_tool_results = cls._process_user_content(getattr(last, "content", None))
+        current_text, current_images, current_tool_results = cls._process_user_content(
+            getattr(last, "content", None)
+        )
 
         # 5) 过滤 tool_use/tool_result 的配对，避免孤立/重复导致 Kiro 400
-        validated_tool_results = cls._validate_tool_pairing(history, current_tool_results)
+        validated_tool_results = cls._validate_tool_pairing(
+            history, current_tool_results
+        )
 
         # 如果 tool_result 被过滤（孤立/重复），把它的内容降级拼到用户文本里，避免 currentMessage 变成空内容。
-        current_text = cls._append_orphan_tool_result_text(current_text, current_tool_results, validated_tool_results)
+        current_text = cls._append_orphan_tool_result_text(
+            current_text, current_tool_results, validated_tool_results
+        )
 
         user_context: Dict[str, Any] = {}
         if tools:
@@ -95,7 +108,12 @@ class KiroAnthropicConverter:
             user_context["toolResults"] = validated_tool_results
 
         # 保守兜底：仅提供 tools 但内容为空时，给一个极短占位符，避免上游判定请求不规范
-        if not current_text and not current_images and tools and not validated_tool_results:
+        if (
+            not current_text
+            and not current_images
+            and tools
+            and not validated_tool_results
+        ):
             current_text = "执行工具任务"
 
         # 再兜底一次：避免发出完全空的 currentMessage（某些上游会直接判定 Improperly formed request）
@@ -204,7 +222,13 @@ class KiroAnthropicConverter:
                 }
             }
         )
-        history.append({"assistantResponseMessage": {"content": "I will follow these instructions."}})
+        history.append(
+            {
+                "assistantResponseMessage": {
+                    "content": "I will follow these instructions."
+                }
+            }
+        )
 
     @classmethod
     def _convert_tools(cls, tools: Optional[List[Any]]) -> List[Dict[str, Any]]:
@@ -212,12 +236,19 @@ class KiroAnthropicConverter:
             return []
 
         if len(tools) > 1:
-            normalized_names = [str(getattr(t, "name", "") or "").strip().lower() for t in tools]
+            normalized_names = [
+                str(getattr(t, "name", "") or "").strip().lower() for t in tools
+            ]
             has_web_search = any(n == "web_search" for n in normalized_names)
             has_other = any(n and n != "web_search" for n in normalized_names)
             if has_web_search and has_other:
-                tools = [t for t, n in zip(tools, normalized_names) if n != "web_search"]
-                logger.info("检测到 mixed tools，已移除内置 web_search（保留 %d 个工具）", len(tools))
+                tools = [
+                    t for t, n in zip(tools, normalized_names) if n != "web_search"
+                ]
+                logger.info(
+                    "检测到 mixed tools，已移除内置 web_search（保留 %d 个工具）",
+                    len(tools),
+                )
 
         out: List[Dict[str, Any]] = []
         for t in tools:
@@ -294,15 +325,23 @@ class KiroAnthropicConverter:
         return names
 
     @classmethod
-    def _ensure_tool_definitions(cls, tools: List[Dict[str, Any]], history_tool_names: List[str]) -> None:
-        existing = {str(t.get("toolSpecification", {}).get("name", "")).lower() for t in tools if isinstance(t, dict)}
+    def _ensure_tool_definitions(
+        cls, tools: List[Dict[str, Any]], history_tool_names: List[str]
+    ) -> None:
+        existing = {
+            str(t.get("toolSpecification", {}).get("name", "")).lower()
+            for t in tools
+            if isinstance(t, dict)
+        }
         for name in history_tool_names:
             if name.lower() not in existing:
                 tools.append(cls._create_placeholder_tool(name))
                 existing.add(name.lower())
 
     @classmethod
-    def _process_user_content(cls, content: Any) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
+    def _process_user_content(
+        cls, content: Any
+    ) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         if isinstance(content, str):
             return content, [], []
 
@@ -312,24 +351,49 @@ class KiroAnthropicConverter:
 
         if isinstance(content, list):
             for block in content:
-                block_type = getattr(block, "type", None) if not isinstance(block, dict) else block.get("type")
+                block_type = (
+                    getattr(block, "type", None)
+                    if not isinstance(block, dict)
+                    else block.get("type")
+                )
 
                 if block_type == "text":
-                    text = getattr(block, "text", None) if not isinstance(block, dict) else block.get("text")
+                    text = (
+                        getattr(block, "text", None)
+                        if not isinstance(block, dict)
+                        else block.get("text")
+                    )
                     if isinstance(text, str) and text:
                         text_parts.append(text)
 
                 elif block_type == "image":
-                    source = getattr(block, "source", None) if not isinstance(block, dict) else block.get("source")
+                    source = (
+                        getattr(block, "source", None)
+                        if not isinstance(block, dict)
+                        else block.get("source")
+                    )
                     source_type = (
-                        getattr(source, "type", None) if not isinstance(source, dict) else source.get("type")
+                        getattr(source, "type", None)
+                        if not isinstance(source, dict)
+                        else source.get("type")
                     )
                     media_type = (
-                        getattr(source, "media_type", None) if not isinstance(source, dict) else source.get("media_type")
+                        getattr(source, "media_type", None)
+                        if not isinstance(source, dict)
+                        else source.get("media_type")
                     )
-                    data = getattr(source, "data", None) if not isinstance(source, dict) else source.get("data")
+                    data = (
+                        getattr(source, "data", None)
+                        if not isinstance(source, dict)
+                        else source.get("data")
+                    )
 
-                    if source_type == "base64" and isinstance(media_type, str) and isinstance(data, str) and data:
+                    if (
+                        source_type == "base64"
+                        and isinstance(media_type, str)
+                        and isinstance(data, str)
+                        and data
+                    ):
                         fmt = cls.IMAGE_FORMAT_MAP.get(media_type)
                         if fmt:
                             images.append({"format": fmt, "source": {"bytes": data}})
@@ -338,10 +402,20 @@ class KiroAnthropicConverter:
 
                 elif block_type == "tool_result":
                     tool_use_id = (
-                        getattr(block, "tool_use_id", None) if not isinstance(block, dict) else block.get("tool_use_id")
+                        getattr(block, "tool_use_id", None)
+                        if not isinstance(block, dict)
+                        else block.get("tool_use_id")
                     )
-                    is_error = getattr(block, "is_error", False) if not isinstance(block, dict) else block.get("is_error")
-                    raw_content = getattr(block, "content", None) if not isinstance(block, dict) else block.get("content")
+                    is_error = (
+                        getattr(block, "is_error", False)
+                        if not isinstance(block, dict)
+                        else block.get("is_error")
+                    )
+                    raw_content = (
+                        getattr(block, "content", None)
+                        if not isinstance(block, dict)
+                        else block.get("content")
+                    )
                     if isinstance(tool_use_id, str) and tool_use_id:
                         result_text = cls._extract_tool_result_text(raw_content)
                         tool_results.append(
@@ -362,9 +436,17 @@ class KiroAnthropicConverter:
         if isinstance(raw_content, list):
             parts: List[str] = []
             for item in raw_content:
-                item_type = getattr(item, "type", None) if not isinstance(item, dict) else item.get("type")
+                item_type = (
+                    getattr(item, "type", None)
+                    if not isinstance(item, dict)
+                    else item.get("type")
+                )
                 if item_type == "text":
-                    text = getattr(item, "text", None) if not isinstance(item, dict) else item.get("text")
+                    text = (
+                        getattr(item, "text", None)
+                        if not isinstance(item, dict)
+                        else item.get("text")
+                    )
                     if isinstance(text, str) and text:
                         parts.append(text)
             return "\n".join(parts)
@@ -374,7 +456,9 @@ class KiroAnthropicConverter:
 
     @classmethod
     def _convert_user_history_message(cls, msg: Any, model_id: str) -> Dict[str, Any]:
-        text, images, tool_results = cls._process_user_content(getattr(msg, "content", None))
+        text, images, tool_results = cls._process_user_content(
+            getattr(msg, "content", None)
+        )
         ctx: Dict[str, Any] = {}
         if tool_results:
             ctx["toolResults"] = tool_results
@@ -399,30 +483,63 @@ class KiroAnthropicConverter:
             text = content
         elif isinstance(content, list):
             for block in content:
-                block_type = getattr(block, "type", None) if not isinstance(block, dict) else block.get("type")
+                block_type = (
+                    getattr(block, "type", None)
+                    if not isinstance(block, dict)
+                    else block.get("type")
+                )
                 if block_type == "thinking":
-                    v = getattr(block, "thinking", None) if not isinstance(block, dict) else block.get("thinking")
+                    v = (
+                        getattr(block, "thinking", None)
+                        if not isinstance(block, dict)
+                        else block.get("thinking")
+                    )
                     if isinstance(v, str) and v:
                         thinking += v
                 elif block_type == "text":
-                    v = getattr(block, "text", None) if not isinstance(block, dict) else block.get("text")
+                    v = (
+                        getattr(block, "text", None)
+                        if not isinstance(block, dict)
+                        else block.get("text")
+                    )
                     if isinstance(v, str) and v:
                         text += v
                 elif block_type == "tool_use":
-                    tool_id = getattr(block, "id", None) if not isinstance(block, dict) else block.get("id")
-                    name = getattr(block, "name", None) if not isinstance(block, dict) else block.get("name")
-                    tool_input = getattr(block, "input", None) if not isinstance(block, dict) else block.get("input")
-                    if isinstance(tool_id, str) and tool_id and isinstance(name, str) and name:
+                    tool_id = (
+                        getattr(block, "id", None)
+                        if not isinstance(block, dict)
+                        else block.get("id")
+                    )
+                    name = (
+                        getattr(block, "name", None)
+                        if not isinstance(block, dict)
+                        else block.get("name")
+                    )
+                    tool_input = (
+                        getattr(block, "input", None)
+                        if not isinstance(block, dict)
+                        else block.get("input")
+                    )
+                    if (
+                        isinstance(tool_id, str)
+                        and tool_id
+                        and isinstance(name, str)
+                        and name
+                    ):
                         tool_uses.append(
                             {
                                 "toolUseId": tool_id,
                                 "name": name,
-                                "input": tool_input if isinstance(tool_input, dict) else {},
+                                "input": tool_input
+                                if isinstance(tool_input, dict)
+                                else {},
                             }
                         )
 
         if thinking:
-            final_content = f"<thinking>{thinking}</thinking>" + (f"\n\n{text}" if text else "")
+            final_content = f"<thinking>{thinking}</thinking>" + (
+                f"\n\n{text}" if text else ""
+            )
         elif not text and tool_uses:
             final_content = "There is a tool use."
         else:
@@ -502,7 +619,10 @@ class KiroAnthropicConverter:
                 if tid in all_tool_use_ids:
                     logger.warning("跳过重复的 tool_result：toolUseId=%s", tid)
                 else:
-                    logger.warning("跳过孤立的 tool_result（找不到对应 tool_use）：toolUseId=%s", tid)
+                    logger.warning(
+                        "跳过孤立的 tool_result（找不到对应 tool_use）：toolUseId=%s",
+                        tid,
+                    )
 
                 text = cls._tool_result_to_text(r)
                 if text:
@@ -608,10 +728,15 @@ class KiroAnthropicConverter:
             elif tid in all_tool_use_ids:
                 logger.warning("跳过重复的 tool_result：toolUseId=%s", tid)
             else:
-                logger.warning("跳过孤立的 tool_result（找不到对应 tool_use）：toolUseId=%s", tid)
+                logger.warning(
+                    "跳过孤立的 tool_result（找不到对应 tool_use）：toolUseId=%s", tid
+                )
 
         # 3) 记录仍未配对的 tool_use（不抛错，避免影响主流程）
         for orphan_id in sorted(unpaired):
-            logger.warning("检测到孤立的 tool_use（找不到对应 tool_result）：toolUseId=%s", orphan_id)
+            logger.warning(
+                "检测到孤立的 tool_use（找不到对应 tool_result）：toolUseId=%s",
+                orphan_id,
+            )
 
         return filtered

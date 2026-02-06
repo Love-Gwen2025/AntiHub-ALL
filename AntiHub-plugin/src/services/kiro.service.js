@@ -82,6 +82,7 @@ const KIRO_MODEL_MAP = {
   'claude-sonnet-4-5-20250929': 'claude-sonnet-4.5',
   'claude-sonnet-4-20250514': 'claude-sonnet-4',
   'claude-opus-4-5-20251101': 'claude-opus-4.5',
+  'claude-opus-4-6-20260203': 'claude-opus-4.6',  // Claude Opus 4.6 (100万token上下文)
   'claude-haiku-4-5-20251001': 'claude-haiku-4.5'
 };
 

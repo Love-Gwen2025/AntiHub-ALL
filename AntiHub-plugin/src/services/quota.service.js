@@ -10,19 +10,21 @@ class QuotaService {
     return {
       // Gemini 3 pro 系列共享配额
       'gemini-3-pro': ['gemini-3-pro-low', 'gemini-3-pro-high'],
-      
+
       // Claude 系列共享配额
-      'claude': ['claude-sonnet-4-5', 'claude-sonnet-4-5-thinking', 'claude-opus-4-5-thinking'],
-      
+      'claude': ['claude-sonnet-4-5', 'claude-sonnet-4-5-thinking', 'claude-opus-4-5-thinking', 'claude-opus-4-6', 'claude-opus-4-6-thinking'],
+
       // Gemini 2.5 pro 系列共享配额
       'gemini-2.5-pro': ['gemini-2.5-pro', 'gemini-2.5-pro-thinking'],
-      
+
       // Claude 和 GPT-OSS 共享配额（antigravity）
       // 注意：这些模型在 antigravity 平台上共享同一个配额池
       'claude-gpt-oss': [
         'claude-sonnet-4-5',
         'claude-sonnet-4-5-thinking',
         'claude-opus-4-5-thinking',
+        'claude-opus-4-6',
+        'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium'
       ],
     };
@@ -35,14 +37,14 @@ class QuotaService {
    */
   getQuotaSharedModels(model_name) {
     const sharedGroups = this.getQuotaSharedGroups();
-    
+
     // 查找该模型属于哪个共享组
     for (const [groupName, models] of Object.entries(sharedGroups)) {
       if (models.includes(model_name)) {
         return models;
       }
     }
-    
+
     // 如果不在任何共享组中，返回自己
     return [model_name];
   }
@@ -54,14 +56,14 @@ class QuotaService {
    */
   getQuotaBaseName(model_name) {
     const sharedGroups = this.getQuotaSharedGroups();
-    
+
     // 查找该模型属于哪个共享组
     for (const [groupName, models] of Object.entries(sharedGroups)) {
       if (models.includes(model_name)) {
         return groupName;
       }
     }
-    
+
     // 如果不在任何共享组中，返回自己
     return model_name;
   }
@@ -112,7 +114,7 @@ class QuotaService {
    */
   async updateQuotasFromModels(cookie_id, modelsData) {
     const results = [];
-    
+
     try {
       for (const [modelName, modelInfo] of Object.entries(modelsData)) {
         if (modelInfo.quotaInfo) {
@@ -175,7 +177,7 @@ class QuotaService {
   async isModelAvailable(cookie_id, model_name) {
     try {
       const quota = await this.getQuota(cookie_id, model_name);
-      
+
       // 如果没有配额记录，默认可用
       if (!quota) {
         return true;
@@ -306,12 +308,12 @@ class QuotaService {
         'SELECT update_user_shared_quota_max($1, $2)',
         [user_id, model_name]
       );
-      
+
       const result = await database.query(
         'SELECT * FROM user_shared_quota_pool WHERE user_id = $1 AND model_name = $2',
         [user_id, model_name]
       );
-      
+
       logger.info(`用户共享配额池上限已更新: user_id=${user_id}, model=${model_name}`);
       return result.rows[0];
     } catch (error) {
@@ -333,7 +335,7 @@ class QuotaService {
       const quota_to_add = parseFloat((account_quota * 2).toFixed(4));
       // 新的 max_quota 增量
       const max_quota_increment = 2;
-      
+
       // 使用 UPSERT 来处理插入或更新
       const result = await database.query(
         `INSERT INTO user_shared_quota_pool (user_id, model_name, quota, max_quota)
@@ -346,7 +348,7 @@ class QuotaService {
          RETURNING *`,
         [user_id, model_name, quota_to_add, max_quota_increment]
       );
-      
+
       logger.info(`用户共享配额已增加: user_id=${user_id}, model=${model_name}, added_quota=${quota_to_add}, quota=${result.rows[0].quota}, max_quota=${result.rows[0].max_quota}`);
       return result.rows[0];
     } catch (error) {
@@ -366,7 +368,7 @@ class QuotaService {
     try {
       // 减少的配额 = 账号配额 * 2
       const quota_to_remove = parseFloat((account_quota * 2).toFixed(4));
-      
+
       const result = await database.query(
         `UPDATE user_shared_quota_pool
          SET quota = GREATEST(quota - $3::numeric, 0),
@@ -376,7 +378,7 @@ class QuotaService {
          RETURNING *`,
         [user_id, model_name, quota_to_remove]
       );
-      
+
       if (result.rows.length > 0) {
         logger.info(`用户共享配额已减少: user_id=${user_id}, model=${model_name}, removed_quota=${quota_to_remove}, new_quota=${result.rows[0].quota}, new_max_quota=${result.rows[0].max_quota}`);
         return result.rows[0];
@@ -442,12 +444,12 @@ class QuotaService {
          RETURNING *`,
         [user_id, model_name, amount]
       );
-      
+
       if (result.rows.length === 0) {
         logger.warn(`用户共享配额池不存在，跳过扣减: user_id=${user_id}, model=${model_name}`);
         return null;
       }
-      
+
       logger.info(`用户共享配额已扣减: user_id=${user_id}, model=${model_name}, amount=${amount}`);
       return result.rows[0];
     } catch (error) {
@@ -479,16 +481,16 @@ class QuotaService {
       );
       const freeCount = parseInt(countResult.rows[0].free_count) || 0;
       const paidCount = parseInt(countResult.rows[0].paid_count) || 0;
-      
+
       // 计算恢复量：0.012 * 免费账号数 + 0.4 * 付费账号数
       const recoveryAmount = parseFloat((0.012 * freeCount + 0.4 * paidCount).toFixed(4));
-      
+
       // 如果没有账号，不需要恢复
       if (recoveryAmount === 0) {
         logger.debug(`用户无有效共享账号，跳过恢复: user_id=${user_id}, model=${model_name}`);
         return null;
       }
-      
+
       // 恢复配额（不超过上限）
       const result = await database.query(
         `UPDATE user_shared_quota_pool
@@ -499,11 +501,11 @@ class QuotaService {
          RETURNING *`,
         [user_id, model_name, recoveryAmount]
       );
-      
+
       if (result.rows.length > 0) {
         logger.info(`用户共享配额已恢复: user_id=${user_id}, model=${model_name}, amount=${recoveryAmount} (free=${freeCount}, paid=${paidCount})`);
       }
-      
+
       return result.rows[0] || null;
     } catch (error) {
       logger.error('恢复用户共享配额失败:', error.message);
@@ -523,13 +525,13 @@ class QuotaService {
          FROM user_shared_quota_pool
          WHERE quota < max_quota`
       );
-      
+
       let recoveredCount = 0;
       for (const pool of poolsResult.rows) {
         await this.recoverUserSharedQuota(pool.user_id, pool.model_name);
         recoveredCount++;
       }
-      
+
       logger.info(`批量恢复用户共享配额完成: 恢复了${recoveredCount}条记录`);
       return recoveredCount;
     } catch (error) {
@@ -643,36 +645,36 @@ class QuotaService {
   async recordQuotaConsumption(user_id, cookie_id, model_name, quota_before, quota_after, is_shared = 1) {
     try {
       let quota_consumed = quota_before - quota_after;
-      
+
       // 如果消耗为负数（配额在请求期间重置），记录为0
       if (quota_consumed < 0) {
         logger.info(`配额在请求期间重置，记录消耗为0: quota_before=${quota_before}, quota_after=${quota_after}`);
         quota_consumed = 0;
       }
-      
+
       const result = await database.query(
         `INSERT INTO quota_consumption_log (user_id, cookie_id, model_name, quota_before, quota_after, quota_consumed, is_shared)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
         [user_id, cookie_id, model_name, quota_before, quota_after, quota_consumed, is_shared]
       );
-      
+
       // 如果使用的是共享cookie，扣减用户共享配额池
       if (is_shared === 1 && quota_consumed > 0) {
         // 获取该模型所属的配额共享组
         const sharedModels = this.getQuotaSharedModels(model_name);
-        
+
         // 同时扣减共享组中所有模型的用户配额
         for (const sharedModel of sharedModels) {
           await this.deductUserSharedQuota(user_id, sharedModel, quota_consumed);
           logger.info(`扣减共享配额: user_id=${user_id}, model=${sharedModel}, amount=${quota_consumed}`);
         }
-        
+
         if (sharedModels.length > 1) {
           logger.info(`配额共享组: [${sharedModels.join(', ')}] - 已同时扣减${sharedModels.length}个模型的配额`);
         }
       }
-      
+
       logger.info(`配额消耗已记录: user_id=${user_id}, model=${model_name}, consumed=${quota_consumed}, is_shared=${is_shared}`);
       return result.rows[0];
     } catch (error) {

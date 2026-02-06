@@ -97,7 +97,7 @@ export default function AnalyticsPage() {
 
         // 加载所有账号的消费记录并聚合
         await loadKiroLogs(accountsData);
-    } else if (activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli' || activeTab === 'zai-tts' || activeTab === 'zai-image') {
+      } else if (activeTab === 'qwen' || activeTab === 'codex' || activeTab === 'gemini-cli' || activeTab === 'zai-tts' || activeTab === 'zai-image') {
         const offset = (requestCurrentPage - 1) * pageSize;
         const configType = activeTab;
         const [statsData, logsData] = await Promise.all([
@@ -196,6 +196,8 @@ export default function AnalyticsPage() {
     'claude-sonnet-4-5',
     'claude-sonnet-4-5-thinking',
     'claude-opus-4-5-thinking',
+    'claude-opus-4-6',
+    'claude-opus-4-6-thinking',
   ];
 
   const getModelDisplayName = (model: string) => {
@@ -203,6 +205,8 @@ export default function AnalyticsPage() {
       'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
       'claude-sonnet-4-5-thinking': 'Claude Sonnet 4.5 (Thinking)',
       'claude-opus-4-5-thinking': 'Claude Opus 4.5 (Thinking)',
+      'claude-opus-4-6': 'Claude Opus 4.6',
+      'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
       'gemini-2.5-flash-image': 'Gemini 2.5 Flash Image',
       'gemini-2.5-flash-thinking': 'Gemini 2.5 Flash (Thinking)',
       'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -262,7 +266,7 @@ export default function AnalyticsPage() {
           ? 'ZAI TTS'
           : activeTab === 'zai-image'
             ? 'ZAI Image'
-          : 'Qwen';
+            : 'Qwen';
 
   if (isLoading && isFirstLoadForTab) {
     return (

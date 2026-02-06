@@ -29,6 +29,7 @@ function stripFtModelName(model) {
 function getAnthropicTokenCount(messages, model) {
   const supportedModels = [
     'claude-opus-4',
+    'claude-opus-4-6',  // Claude Opus 4.6 (100万token上下文)
     'claude-sonnet-4',
     'claude-3-7-sonnet',
     'claude-3-5-sonnet',
@@ -144,29 +145,29 @@ export function countMessageTokens(messages, model) {
  */
 function mapModelForTiktoken(model) {
   const normalizedModel = model.toLowerCase();
-  
+
   // GPT-OSS 和 Gemini 模型使用 cl100k_base 编码（与 GPT-4 相同）
   if (normalizedModel.includes('gpt-oss') ||
-      normalizedModel.includes('gemini') ||
-      normalizedModel.includes('gpt-4o')) {
+    normalizedModel.includes('gemini') ||
+    normalizedModel.includes('gpt-4o')) {
     return 'gpt-4o';
   }
-  
+
   // GPT-4 系列
   if (normalizedModel.includes('gpt-4')) {
     return 'gpt-4';
   }
-  
+
   // GPT-3.5 系列
   if (normalizedModel.includes('gpt-3.5')) {
     return 'gpt-3.5-turbo';
   }
-  
+
   // o1/o3 系列模型
   if (normalizedModel.startsWith('o1') || normalizedModel.startsWith('o3')) {
     return 'gpt-4o';
   }
-  
+
   return model;
 }
 
@@ -205,7 +206,7 @@ export function countStringTokens(text, model) {
   const tokens = encoding.encode(text, 'all');  // 'all' 允许所有特殊 token
   const count = tokens.length;
   encoding.free();
-  
+
   return count;
 }
 

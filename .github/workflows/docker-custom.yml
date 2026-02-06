@@ -1,0 +1,123 @@
+# ============================================
+# AntiHub dev_custom 分支专用 Docker 构建工作流
+# ============================================
+# 功能：推送到 dev_custom 分支时自动构建三个项目的 Docker 镜像
+# 架构：仅 linux/amd64
+# 镜像标签：custom, custom-sha-xxxxxxx
+# ============================================
+
+name: Build Docker Images (dev_custom)
+
+on:
+  push:
+    branches: [dev_custom]
+  workflow_dispatch:  # 支持手动触发
+
+concurrency:
+  group: docker-custom-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ============ Web 前端 ============
+  build-web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (web)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./AntiHub
+          file: ./AntiHub/Dockerfile
+          build-contexts: |
+            antihook=./AntiHook
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-web:custom
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-web:custom-sha-${{ github.sha }}
+          cache-from: type=gha,scope=web-custom
+          cache-to: type=gha,mode=max,scope=web-custom
+
+  # ============ Backend 后端 ============
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (backend)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./AntiHub-Backend
+          file: ./AntiHub-Backend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-backend:custom
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-backend:custom-sha-${{ github.sha }}
+          cache-from: type=gha,scope=backend-custom
+          cache-to: type=gha,mode=max,scope=backend-custom
+
+  # ============ Plugin 插件服务 ============
+  build-plugin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (plugin)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./AntiHub-plugin
+          file: ./AntiHub-plugin/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-plugin:custom
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/antihub-plugin:custom-sha-${{ github.sha }}
+          cache-from: type=gha,scope=plugin-custom
+          cache-to: type=gha,mode=max,scope=plugin-custom

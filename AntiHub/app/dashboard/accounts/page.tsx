@@ -1635,6 +1635,8 @@ export default function AccountsPage() {
     'claude-sonnet-4-5',
     'claude-sonnet-4-5-thinking',
     'claude-opus-4-5-thinking',
+    'claude-opus-4-6',
+    'claude-opus-4-6-thinking',
   ];
 
   const getModelDisplayName = (model: string) => {
@@ -1642,6 +1644,8 @@ export default function AccountsPage() {
       'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
       'claude-sonnet-4-5-thinking': 'Claude Sonnet 4.5 (Thinking)',
       'claude-opus-4-5-thinking': 'Claude Opus 4.5 (Thinking)',
+      'claude-opus-4-6': 'Claude Opus 4.6',
+      'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
       'gemini-2.5-flash-image': 'Gemini 2.5 Flash Image',
       'gemini-2.5-flash-thinking': 'Gemini 2.5 Flash (Thinking)',
       'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -1832,132 +1836,132 @@ export default function AccountsPage() {
               ) : (
                 <div className="flex-1 min-h-0 overflow-auto -mx-6 px-6 md:mx-0 md:px-0">
                   <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="min-w-[200px]">账号 ID</TableHead>
-                          <TableHead className="min-w-[220px]">Project ID</TableHead>
-                          <TableHead className="min-w-[120px]">账号名称</TableHead>
-                          <TableHead className="min-w-[80px]">状态</TableHead>
-                          <TableHead className="min-w-[100px]">添加时间</TableHead>
-                          <TableHead className="min-w-[100px]">最后使用</TableHead>
-                          <TableHead className="text-right min-w-[80px]">操作</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {accounts.map((account) => (
-                          <TableRow key={account.cookie_id}>
-                            <TableCell className="font-mono text-sm">
-                              <div className="max-w-[200px] truncate" title={account.cookie_id}>
-                                {account.cookie_id}
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-mono text-sm">
-                              <div className="max-w-[220px] truncate" title={account.project_id_0 || ''}>
-                                {account.project_id_0 || '-'}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {account.status === 0 && !account.project_id_0 && !account.paid_tier && (
-                                  <Tooltip
-                                    containerClassName="pointer-events-auto"
-                                    content={
-                                      <div className="space-y-1">
-                                        <p className="font-medium">你的账号暂时无权使用Antigravity。</p>
-                                        <div className="text-xs space-y-0.5">
-                                          我们暂时禁用了你的Antigravity账号。这可能是因为{account.is_restricted && <p> • 你的账号处于受限制的国家或地区。</p>}{account.ineligible && <p> • 你的账号没有Google AI使用资格。</p>}如果你恢复了Antigravity的访问权限，你可手动启用该账号。
-                                        </div>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[200px]">账号 ID</TableHead>
+                        <TableHead className="min-w-[220px]">Project ID</TableHead>
+                        <TableHead className="min-w-[120px]">账号名称</TableHead>
+                        <TableHead className="min-w-[80px]">状态</TableHead>
+                        <TableHead className="min-w-[100px]">添加时间</TableHead>
+                        <TableHead className="min-w-[100px]">最后使用</TableHead>
+                        <TableHead className="text-right min-w-[80px]">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {accounts.map((account) => (
+                        <TableRow key={account.cookie_id}>
+                          <TableCell className="font-mono text-sm">
+                            <div className="max-w-[200px] truncate" title={account.cookie_id}>
+                              {account.cookie_id}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            <div className="max-w-[220px] truncate" title={account.project_id_0 || ''}>
+                              {account.project_id_0 || '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {account.status === 0 && !account.project_id_0 && !account.paid_tier && (
+                                <Tooltip
+                                  containerClassName="pointer-events-auto"
+                                  content={
+                                    <div className="space-y-1">
+                                      <p className="font-medium">你的账号暂时无权使用Antigravity。</p>
+                                      <div className="text-xs space-y-0.5">
+                                        我们暂时禁用了你的Antigravity账号。这可能是因为{account.is_restricted && <p> • 你的账号处于受限制的国家或地区。</p>}{account.ineligible && <p> • 你的账号没有Google AI使用资格。</p>}如果你恢复了Antigravity的访问权限，你可手动启用该账号。
                                       </div>
-                                    }
-                                  >
-                                    <IconAlertTriangle className="size-4 text-amber-500 shrink-0 cursor-help" />
-                                  </Tooltip>
-                                )}
-                                <span>{account.name || '未命名'}</span>
-                                {account.need_refresh && (
-                                  <Badge variant="outline" className="text-yellow-600 border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
-                                    <IconAlertTriangle className="size-3 mr-1" />
-                                    需要重新登录
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={account.status === 1 ? 'default' : 'outline'} className="whitespace-nowrap">
-                                {account.status === 1 ? '启用' : '禁用'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                              {new Date(account.created_at).toLocaleDateString('zh-CN')}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                              {account.last_used_at
-                                ? new Date(account.last_used_at).toLocaleDateString('zh-CN')
-                                : '从未使用'
-                              }
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
-                                    <IconDotsVertical className="size-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                   <DropdownMenuItem onClick={() => handleViewAntigravityDetail(account)}>
-                                     <IconExternalLink className="size-4 mr-2" />
-                                     详细信息
-                                   </DropdownMenuItem>
-                                   <DropdownMenuItem onClick={() => handleViewQuotas(account)}>
-                                   <IconChartBar className="size-4 mr-2" />
-                                    查看配额
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleCopyAntigravityCredentials(account)}>
-                                    <IconCopy className="size-4 mr-2" />
-                                    复制凭证为JSON
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleRefreshAntigravityAccount(account)}
-                                    disabled={refreshingCookieId === account.cookie_id}
-                                  >
-                                    <IconRefresh className="size-4 mr-2" />
-                                    {refreshingCookieId === account.cookie_id ? '刷新中...' : '刷新项目ID'}
-                                  </DropdownMenuItem>
-                                   <DropdownMenuItem onClick={() => handleEditProjectId(account)}>
-                                     <IconEdit className="size-4 mr-2" />
-                                     修改项目ID
-                                   </DropdownMenuItem>
-                                   <DropdownMenuItem onClick={() => handleRenameAntigravity(account)}>
-                                    <IconEdit className="size-4 mr-2" />
-                                    重命名
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleToggleStatus(account)}>
-                                    {account.status === 1 ? (
-                                      <>
-                                        <IconToggleLeft className="size-4 mr-2" />
-                                        禁用
-                                      </>
-                                    ) : (
-                                      <>
-                                        <IconToggleRight className="size-4 mr-2" />
-                                        启用
-                                      </>
-                                    )}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleDelete(account.cookie_id)}
-                                    className="text-red-600"
-                                  >
-                                    <IconTrash className="size-4 mr-2" />
-                                    删除
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                                    </div>
+                                  }
+                                >
+                                  <IconAlertTriangle className="size-4 text-amber-500 shrink-0 cursor-help" />
+                                </Tooltip>
+                              )}
+                              <span>{account.name || '未命名'}</span>
+                              {account.need_refresh && (
+                                <Badge variant="outline" className="text-yellow-600 border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
+                                  <IconAlertTriangle className="size-3 mr-1" />
+                                  需要重新登录
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={account.status === 1 ? 'default' : 'outline'} className="whitespace-nowrap">
+                              {account.status === 1 ? '启用' : '禁用'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {new Date(account.created_at).toLocaleDateString('zh-CN')}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {account.last_used_at
+                              ? new Date(account.last_used_at).toLocaleDateString('zh-CN')
+                              : '从未使用'
+                            }
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <IconDotsVertical className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewAntigravityDetail(account)}>
+                                  <IconExternalLink className="size-4 mr-2" />
+                                  详细信息
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewQuotas(account)}>
+                                  <IconChartBar className="size-4 mr-2" />
+                                  查看配额
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleCopyAntigravityCredentials(account)}>
+                                  <IconCopy className="size-4 mr-2" />
+                                  复制凭证为JSON
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleRefreshAntigravityAccount(account)}
+                                  disabled={refreshingCookieId === account.cookie_id}
+                                >
+                                  <IconRefresh className="size-4 mr-2" />
+                                  {refreshingCookieId === account.cookie_id ? '刷新中...' : '刷新项目ID'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEditProjectId(account)}>
+                                  <IconEdit className="size-4 mr-2" />
+                                  修改项目ID
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleRenameAntigravity(account)}>
+                                  <IconEdit className="size-4 mr-2" />
+                                  重命名
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleToggleStatus(account)}>
+                                  {account.status === 1 ? (
+                                    <>
+                                      <IconToggleLeft className="size-4 mr-2" />
+                                      禁用
+                                    </>
+                                  ) : (
+                                    <>
+                                      <IconToggleRight className="size-4 mr-2" />
+                                      启用
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(account.cookie_id)}
+                                  className="text-red-600"
+                                >
+                                  <IconTrash className="size-4 mr-2" />
+                                  删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
@@ -2008,7 +2012,7 @@ export default function AccountsPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={account.status === 1 ? 'default' : 'outline'} className="whitespace-nowrap">
-                              {account.status === 1 ? '启用' : '禁用'}     
+                              {account.status === 1 ? '启用' : '禁用'}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
@@ -2111,7 +2115,7 @@ export default function AccountsPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={account.status === 1 ? 'default' : 'secondary'}>
-                              {account.status === 1 ? '启用' : '禁用'}     
+                              {account.status === 1 ? '启用' : '禁用'}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -2937,7 +2941,7 @@ export default function AccountsPage() {
                             <TableCell className="font-medium text-sm">
                               <Badge variant={
                                 group.tier === 'Pro' ? 'default' :
-                                group.tier === 'Flash' ? 'secondary' : 'outline'
+                                  group.tier === 'Flash' ? 'secondary' : 'outline'
                               }>
                                 {group.tier}
                               </Badge>
@@ -3338,7 +3342,7 @@ export default function AccountsPage() {
               关闭
             </Button>
           </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
+        </ResponsiveDialogContent>
       </ResponsiveDialog>
 
       {/* Codex 限额窗口（wham/usage） */}
@@ -3574,7 +3578,7 @@ export default function AccountsPage() {
                       <Label className="text-xs text-muted-foreground">剩余额度</Label>
                       <p className="text-sm font-mono">
                         {detailCodexAccount.quota_remaining === null ||
-                        detailCodexAccount.quota_remaining === undefined
+                          detailCodexAccount.quota_remaining === undefined
                           ? '-'
                           : `${Number(detailCodexAccount.quota_remaining).toFixed(2)}${detailCodexAccount.quota_currency ? ` ${detailCodexAccount.quota_currency}` : ''}`}
                       </p>
